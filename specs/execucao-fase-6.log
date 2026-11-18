@@ -1,0 +1,60 @@
+# Evidência da Fase 6 (ms-api), 2026-11-18
+# make check = 0 (build, vet, test -race, arch, lint, govulncheck); make integration = 0 (133 s, 9 testes TestAPI* novos + as fases anteriores);
+# mutação: desligar a guarda `closed > 1` no Finish do worker quebra TestAPIPipelineSSEMiniaturaERetryDaDLQ (completed_count = 3, quer 2);
+# depois do /code-review high: 5 achados corrigidos, 1 refutado por teste (ReadTimeout), 3 registrados na spec; make check/integration repetidos (ver abaixo na spec).
+# make accept = 0 (Fases 1 a 6, antes das correções do review; o aceite 6 não depende delas). Abaixo, a saída do aceite da Fase 6 (broker, Postgres e Picsum reais), da rodada final.
+== 1. pilha pronta
+ok    ms-api /readyz (200)
+ok    ms-worker /readyz (200)
+ok    ms-ingest /readyz (200)
+== 2. sem token ou de origem estranha: recusado (SSE e miniatura incluídos)
+ok    GET /batches sem token (401)
+ok    GET /photos sem token (401)
+ok    GET /dlq sem token (401)
+ok    GET /events sem token (401)
+ok    GET /photos/00000000-0000-4000-8000-000000000000/thumb sem token (401)
+ok    POST /dlq/{id}/retry sem token (401)
+ok    token na query não vale (401)
+ok    origem fora da allowlist (com token) (403)
+ok    origem fora da allowlist no SSE (403)
+ok    com token (200)
+== 3. SSE: pending → done|failed ao vivo, e heartbeat em silêncio
+ok    POST /batches (202)
+ok    lote 1 concluído (1)
+ok    evento batch.created (1)
+ok    evento photo.done (1)
+ok    evento photo.failed (1)
+ok    evento batch.completed (1)
+ok    heartbeat em silêncio
+== 4. Last-Event-ID depois de reiniciar o ms-api: sem perda e sem repetição
+ok    saída do ms-api (0)
+ok    POST /batches com o ms-api parado (202)
+ok    lote 2 concluído (ms-api parado) (1)
+ok    ms-api /readyz (200)
+ok    ids depois do reinício == eventos do banco depois de 237 (238 239 240 )
+ok    sem id repetido (0)
+ok    batch.completed do lote 2 no stream (1)
+ok    Last-Event-ID inválido (400)
+== 5. leitura, miniatura com ETag e paginação
+ok    foto done 142059ec-ac1a-4a88-beda-97171aff9996
+ok    foto failed d4896277-bf61-4926-88df-512aaea005c1
+ok    miniatura com ETag "889b212689ddc65bf48aaa2a8bf4311c"
+ok    miniatura com If-None-Match (304)
+ok    miniatura da foto failed (404)
+ok    lote 1: total/completed/failed (2/2/1)
+ok    GET /batches?limit=1 tem next_cursor (true)
+== 6. DLQ com a causa e retry sem duplicar resultado
+ok    causa na DLQ (HTTP 404)
+ok    retry da foto failed (202)
+ok    foto volta à DLQ (a origem continua 404) (failed)
+ok    completed_count do lote 1 intocado (2)
+ok    batch.completed do lote 1 não reemitido (1)
+ok    evento photo.retried gravado (1)
+ok    retry de foto done (409)
+ok    retry de foto inexistente (404)
+== 7. SIGTERM com stream aberto: saída 0
+ok    saída do ms-api (0)
+ok    stream recebeu event: shutdown
+ok    ms-api /readyz (200)
+
+ACEITE DA FASE 6: OK

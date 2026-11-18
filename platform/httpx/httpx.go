@@ -70,11 +70,27 @@ func CORS(origins []string) Middleware {
 				w.Header().Set("Access-Control-Expose-Headers", "Idempotent-Replay")
 				if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 					w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-					w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key")
+					w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, Last-Event-ID")
 					w.Header().Set("Access-Control-Max-Age", "600")
 					w.WriteHeader(http.StatusNoContent)
 					return
 				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// OriginGuard recusa (403 origin_not_allowed) toda requisição que traga um Origin fora da lista,
+// inclusive o preflight e o GET do SSE: o CORS sozinho só deixa de adicionar cabeçalhos, e o
+// navegador é quem bloqueia. Sem Origin (curl, outro serviço) passa; a autenticação é do Token.
+// Lista vazia recusa qualquer Origin. Usado pelo ms-api, que expõe leitura e reprocessamento.
+func OriginGuard(origins []string) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if o := r.Header.Get("Origin"); o != "" && !slices.Contains(origins, o) {
+				Problem(w, http.StatusForbidden, "origin_not_allowed", "origem não permitida")
+				return
 			}
 			next.ServeHTTP(w, r)
 		})

@@ -10,7 +10,7 @@
 
 ## Decisão
 
-Hipóteses: CORS com allowlist de origens no ingest e no `ms-api`; token estático de demonstração (**não é segurança real**, o README diz isso); SSE via `fetch` com cabeçalho; miniaturas com URL não adivinhável (UUID) ou cookie de demonstração. `POST /dlq/{id}/retry` marca a foto `pending`, grava nova linha no outbox e o evento; o `batch.completed` **não** é reemitido e a reabertura aparece no status da foto. hipótese: **não decidida** até a evidência e a sua aprovação.
+Escolhas do usuário em 2026-11-18 (`specs/fase-6-api.md`, D1 a D3), **ainda `proposta` até a evidência da Fase 6 e a aprovação**: CORS com allowlist de origens no ingest e no `ms-api`; token estático de demonstração (**não é segurança real**, o README diz isso); SSE via `fetch` com `Authorization` (sem token na query); miniaturas **também com Bearer** (o painel baixa por `fetch` e usa `blob:` URL; sem cookie nem URL pública). `POST /dlq/{id}/retry` só reabre foto `failed` (marca `pending`, grava nova linha no outbox e o evento); `done`/`pending` ⇒ 409. O `batch.completed` **não** é reemitido, `completed_count` não é decrementado (o worker passa a contar o lote só na 1ª finalização da foto) e a reabertura aparece no status da foto.
 
 ## Alternativas
 

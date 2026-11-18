@@ -16,6 +16,7 @@ rand() { od -An -tx1 -N16 /dev/urandom | tr -d ' \n'; }
 grep -q '^RABBITMQ_USER=' .env || echo 'RABBITMQ_USER=app' >> .env
 grep -q '^RABBITMQ_PASS=' .env || echo "RABBITMQ_PASS=$(rand)" >> .env
 grep -q '^POSTGRES_PASS=' .env || echo "POSTGRES_PASS=$(rand)" >> .env
+grep -q '^API_DEMO_TOKEN=' .env || echo "API_DEMO_TOKEN=$(rand)" >> .env
 
 dc() { svc="$1"; shift; docker compose --env-file .env -f "$svc/docker-compose.yml" "$@"; }
 

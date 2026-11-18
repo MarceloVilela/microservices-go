@@ -43,10 +43,11 @@ jobs:
         run: make images
       - name: Download HTTPS dentro da base da imagem final
         run: docker run --rm ms-go-https-probe https://picsum.photos/id/1/64/64
-      - name: Aceite ponta a ponta (compose, topologia, readyz, ingest, outbox e worker)
+      - name: Aceite ponta a ponta (compose, topologia, readyz, ingest, outbox, worker, notification e ms-api)
         run: |
           ./run.sh
           scripts/aceite-fase-1.sh
           scripts/aceite-fase-2.sh
           scripts/aceite-fase-3.sh
           scripts/aceite-fase-5.sh
+          scripts/aceite-fase-6.sh
