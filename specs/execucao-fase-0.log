@@ -1,0 +1,31 @@
+Fase 0: registro de execução (2026-11-17)
+
+[ok] git checkout -b fase-0-auditoria-spec-spikes (a partir de main)
+[ok] ADRs 0001-0020 em docs/adr/ (python3 -I gerador; 20 arquivos + README)
+[ok] S3: curl contra picsum.photos -> specs/spikes/s3-picsum.md
+[ok] Go 1.27.4 instalado em ~/go-sdk (tarball go.dev, sha256 conferido; 283 MB; PATH não alterado).
+[ok] S1: specs/spikes/s1-amqp.md (RabbitMQ 4.3.6, amqp091-go v1.17.0). Imagem rabbitmq reaproveitada; precisa de --user rabbitmq.
+[ok] S2: specs/spikes/s2-retry.md (escada real 5s,30s; herd 200 msgs; HOL; retry nativo da quorum queue).
+     Erro meu no 1º run do bloco nativo (zsh não separou argumentos); descartado e repetido com bash.
+[ok] S4: specs/spikes/s4-testcontainers.md (go test -race -count=1 -v ./... -> exit=0, 2 PASS; imagens postgres:18-alpine e rabbitmq reaproveitadas; Ryuk 4,8 MB baixado).
+[ok] S5: specs/spikes/s5-imagem.md (scratch sem CA falha com x509; scratch+CA e distroless ok; healthcheck healthy em 4s).
+[ok] Oráculo contra o v1 (9302ac7): O1 a O5 + A1/A2 -> specs/oraculo-v1-resultado.txt. v1 subiu pelos próprios compose, sem alterar o código; derrubado depois (volume db_data removido; ec-network mantida).
+[!!] Correções: (a) A2 da auditoria estava errado (broker parado => transação NÃO é gravada); (b) o eacces do rabbitmq não reproduziu depois; a suposição sobre o compose do v1 estava errada (S1 e S4 corrigidos).
+[--] Referências cruzadas: conferidas à mão em README.md, CLAUDE.md, Cabout__.md (zgo.md -> go101.md);
+     (resolvido na conferência final abaixo)
+[ok] Dataset: specs/dataset-de-paridade.md reescrito; specs/dataset-server (go test -race -count=1 ./... -> exit=0, 3 PASS, specs/dataset-server-teste.txt). PNG 30000x30000 de 111.293 bytes conferido com `file`; 503,503,200 e 429 Retry-After:45 conferidos com curl.
+[!!] Correção de desenho: o caso 8 (host fora da allowlist) sai do lote, porque o ingest rejeita o request inteiro com 400; o lote passa a ter 9 fotos (7 done e 2 failed).
+[ok] Referências cruzadas (2026-11-17): script extraiu tokens `...` e links de todos os .md/.log e checou a existência.
+     Achados e correções:
+     - zangular.md NÃO existe: foi renomeado para angular101.md (como zgo.md -> go101.md) no repo irmão; corrigido em plan-go.md, CLAUDE.md,
+       CLAUDE.local.md e Cabout__.md. (Antes eu tinha afirmado, errado, que ele estava em ../microservices-frontend-angular/docs/.)
+     - specs/README.md citado no plano não existia: criado.
+     - plan-go.md citava "CLAUDE.md deste diretório" para a vaga-alvo React: o trecho está em published/reactjs/CLAUDE.md; corrigido.
+     - ADRs 0001 e 0013 e o G1 do plano citavam dataset/oráculo sem o prefixo specs/: corrigido.
+     - Caminhos soltos de auditoria-v1.md (client.http, run.sh, specs.md...) são do repo do v1: nota adicionada.
+     - Mantidos como estão (registros históricos): docs/go101.md (zgo.md, plan.md, specs/adr/) e docs/plan-go-code-review.md (zangular.md).
+     - Artefatos futuros (cmd/, internal/, platform/, web/, events.schema.json, CHANGELOG.md, fase-N-nome.md): não existem ainda, por desenho.
+     - specs/adr/ em plan-go.md linha 357 refere-se ao php-laravel (existe lá), não a este repo.
+[ok] ADR 0005 decidida (2026-11-17): o usuário escolheu o retry nativo e, após ver a latência de quorum (p50 5,3 ms, 12x a clássica; reinício 67 s vs 29 s, specs/spikes/s1-quorum-resultado.txt), voltou para a escada TTL + DLX. Tabela comparativa na ADR 0005. Edições do plano feitas para o nativo foram revertidas (plan-go.md, CLAUDE.md, README, ADR 0015, dataset).
+[ok] ADRs 0007, 0010, 0011 e 0012 aceitas em 2026-11-18 (0007: Postgres + pgx, sqlc adiado). As outras 12 ficam proposta até as fases correspondentes (decisão do usuário). **G0 fechado em 2026-11-18.** Nada commitado.
+[!!] rabbitmq: eacces voltou na 1a partida sem --user (19:58 UTC) e sumiu após docker restart; causa desconhecida.

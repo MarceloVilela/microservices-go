@@ -1,0 +1,26 @@
+== tamanhos
+distroless 15.8MB
+scratch-ca 9.41MB
+scratch-noca 9.11MB
+== download HTTPS em scratch-noca
+ERRO: Get "https://picsum.photos/id/10/200/200": tls: failed to verify certificate: x509: certificate signed by unknown authority
+exit=1
+== download HTTPS em scratch-ca
+status=200 final=fastly.picsum.photos tipo=image/jpeg bytes=6488
+exit=0
+== download HTTPS em distroless
+status=200 final=fastly.picsum.photos tipo=image/jpeg bytes=6488
+exit=0
+== sem shell / sem curl na distroless
+docker: Error response from daemon: failed to create task for container: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: "sh": executable file not found in $PATH
+
+exit=0
+== healthcheck (distroless, via HEALTHCHECK do Dockerfile)
+  t=2s health=starting
+  t=4s health=healthy
+== healthcheck manual (docker exec) com o servidor no ar
+healthy
+exit=0
+== healthcheck sem servidor (deve falhar)
+unhealthy: Get "http://127.0.0.1:8080/healthz": dial tcp 127.0.0.1:8080: connect: connection refused
+exit=1

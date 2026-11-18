@@ -39,7 +39,7 @@ Serviços não importam uns aos outros. Diagrama e detalhes na seção 6 de [`do
 
 | Fase | Tema | Status |
 |---|---|---|
-| 0 | Auditoria do v1, spec, ADRs e spikes | pendente |
+| 0 | Auditoria do v1, spec, ADRs e spikes | G0 fechado; PR pendente |
 | 1 | Esqueleto: monorepo, Docker, CI, lint e topologia do broker | pendente |
 | 2 | `ms-ingest`: API, outbox e publicação com confirmação | pendente |
 | 3 | `ms-worker`: consumo, miniatura, idempotência e fim de lote | pendente |
@@ -56,8 +56,9 @@ O backend (fases 0 a 7) fecha sem o painel.
 
 - [`docs/plan-go.md`](docs/plan-go.md): plano spec-driven completo (requisitos, gates, arquitetura, fases, riscos).
 - [`docs/plan-go-code-review.md`](docs/plan-go-code-review.md): revisão do plano e rastreio das correções.
-- [`docs/zgo.md`](docs/zgo.md): como o projeto foi escolhido.
-- [`docs/adr/`](docs/adr): decisões de arquitetura (vazio até a Fase 0).
+- [`docs/go101.md`](docs/go101.md): como o projeto foi escolhido.
+- [`docs/adr/`](docs/adr): 20 ADRs; 8 aceitas e 12 `proposta` até as fases correspondentes (nenhuma é aceita sem evidência e aprovação).
+- [`specs/`](specs): entregáveis da Fase 0 (auditoria do v1, oráculo, dataset, spikes).
 
 ## Metodologia
 
@@ -68,5 +69,5 @@ versionada. Nenhuma ADR é aceita sem medição e aprovação.
 
 - Domínio diferente do v1; a paridade é de comportamento.
 - Sem deploy real: roda só local, via Docker.
-- Retry por degraus de TTL fixo, sem jitter (a ADR 0005 pode trocar o mecanismo após o spike).
+- Retry por degraus de TTL fixo, sem jitter; o *thundering herd* foi medido no S2 e é custo assumido (ADR 0005).
 - Token estático de demonstração no painel **não é** segurança real.

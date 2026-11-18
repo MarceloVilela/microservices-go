@@ -1,0 +1,17 @@
+== clássica (controle, mesma execução)
+sequencial: n=1000 total=478ms throughput=2091/s p50=423.405µs p95=724.662µs p99=1.328705ms max=6.312168ms
+em lote:    n=1000 total=33ms throughput=30708/s
+exit=0
+== quorum
+sequencial: n=1000 total=5.765s throughput=173/s p50=5.254808ms p95=8.460999ms p99=11.292392ms max=12.864989ms
+em lote:    n=1000 total=98ms throughput=10192/s
+exit=0
+== quorum: reinício do broker no meio de 200 publicações (broker saudável no início)
+  conectado (tentativa 1)
+  falha (Exception (504) Reason: "channel/connection is not open"); reconectando
+  [restart do broker concluído]
+  conectado (tentativa 7)
+reconnect: confirmadas=200 reenvios=1 duração=1m7.086s
+exit=0
+s1.photo.process.quorum	quorum	200
+s1.photo.process	classic	2000

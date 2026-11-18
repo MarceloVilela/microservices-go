@@ -1,0 +1,56 @@
+v1: 9302ac7 | 4.3.6
+
+== O1 (R2): publicar sem esperar resposta, consumidor parado
+  POST value=11 -> http=200
+  fila: notification_queue	1	0
+
+== O2 (R3): FIFO (3 transações 101,102,103; depois consumir)
+  POST value=101 -> http=200
+  POST value=102 -> http=200
+  POST value=103 -> http=200
+  fila antes: notification_queue	3	0
+  Consuming queue: 
+  Printing: {"transaction":53,"name":"Providenci Welch V","email":"nmohr@example.com","value":101}
+  Printing: {"transaction":54,"name":"Providenci Welch V","email":"nmohr@example.com","value":102}
+  Printing: {"transaction":55,"name":"Providenci Welch V","email":"nmohr@example.com","value":103}
+  fila depois: notification_queue	0	0
+
+== O3 (R5a): consumidor parado, mensagens ficam em Ready, entrega na volta
+  POST value=201 -> http=200
+  POST value=202 -> http=200
+  fila (consumidor parado): notification_queue	2	0
+  Consuming queue: 
+  Printing: {"transaction":56,"name":"Providenci Welch V","email":"nmohr@example.com","value":201}
+  Printing: {"transaction":57,"name":"Providenci Welch V","email":"nmohr@example.com","value":202}
+  fila depois da volta: notification_queue	0	0
+
+== O4 (R5b): broker reiniciado com 2 mensagens na fila
+  POST value=301 -> http=200
+  POST value=302 -> http=200
+  fila antes do restart: notification_queue	2	0
+  fila depois do restart: notification_queue	0	0
+
+== O5: consumidor derrubado com mensagem em voo (no_ack=true)
+  consumidor pid=38; congelando (SIGSTOP) e publicando 3 mensagens
+  POST value=401 -> http=200
+  POST value=402 -> http=200
+  POST value=403 -> http=200
+  fila com o consumidor congelado: notification_queue	0	0
+  fila depois do kill -9: notification_queue	0	0
+  saída do consumidor (/tmp/o5.txt):
+    Consuming queue: 
+  subindo um novo consumidor por 5 s:
+    Consuming queue: 
+
+== A1/A2 da auditoria: broker PARADO (docker stop ms-queues)
+  transações antes: 62
+
+  body inválido ({}) -> http=500
+    resposta: {
+    resposta:     "message": "stream_socket_client(): Unable to connect to tcp://ms-queues:5672 (php_network_getaddresses: getaddrinfo for ms-queues failed: Try again)",
+    resposta:     "exception": "PhpAmqpLib\\Exception\\A
+  body válido -> http=500
+    resposta: {
+    resposta:     "message": "stream_socket_client(): Unable to connect to tcp://ms-queues:5672 (php_network_getaddresses: getaddrinfo for ms-queues failed: Try again)",
+    resposta:     "exception": "PhpAmqpLib\\Exception\\A
+  transações depois: 62
