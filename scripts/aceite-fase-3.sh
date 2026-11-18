@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Aceite da Fase 3 (ms-worker e fim de lote), ponta a ponta, com o Lorem Picsum de verdade.
-# Requer a pilha de pé (./run.sh) e acesso à internet. Para e religa o ms-worker.
+# Requer a pilha de pé (./run.sh) e acesso à internet. Para e religa o ms-worker e o ms-notification.
 # Sai com 0 só se todos os critérios passarem. Uso: scripts/aceite-fase-3.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -13,7 +13,8 @@ INGEST="http://localhost:8081"
 WORKER="http://localhost:8083"
 RUN="$(date +%s)-$$"
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+NOTIF_UP="$(docker inspect -f '{{.State.Running}}' ms-notification 2>/dev/null || echo false)"
+trap '[ "$NOTIF_UP" = true ] && docker start ms-notification >/dev/null 2>&1; rm -rf "$TMP"' EXIT
 fails=0
 
 ok()   { printf 'ok    %s\n' "$1"; }
@@ -56,6 +57,9 @@ PY
 
 echo "== 1. worker pronto (broker, Postgres, esquema e diretório de miniaturas)"
 docker start ms-worker >/dev/null 2>&1 || true   # o aceite da Fase 2 o deixa parado
+# O ms-notification (Fase 5) consumiria o batch.completed que este aceite conta como Ready; fica parado
+docker stop ms-notification >/dev/null 2>&1 || true
+[ "$(docker inspect -f '{{.State.Running}}' ms-notification 2>/dev/null || echo false)" = false ] || { echo "FALHA: não consegui parar o ms-notification"; exit 1; }
 wait_for 200 "ms-worker /readyz" status "$WORKER/readyz"
 wait_for 200 "ms-ingest /readyz" status "$INGEST/readyz"
 # o aceite da Fase 2 deixou mensagens na fila; espera o worker esvaziá-la para contar só as deste aceite

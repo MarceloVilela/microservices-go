@@ -1,4 +1,4 @@
-package consumer_test
+package amqpx_test
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MarceloVilela/microservices-go/ms-worker/internal/adapters/consumer"
+	"github.com/MarceloVilela/microservices-go/platform/amqpx"
 )
 
 // fakeClock deixa o teste controlar a espera sem dormir de verdade.
@@ -19,8 +19,8 @@ type waits struct {
 
 func (w *waits) add(d time.Duration) { w.mu.Lock(); w.d = append(w.d, d); w.mu.Unlock() }
 
-func newSup(run func(context.Context) error, w *waits, now func() time.Time) *consumer.Supervisor {
-	return &consumer.Supervisor{
+func newSup(run func(context.Context) error, w *waits, now func() time.Time) *amqpx.Supervisor {
+	return &amqpx.Supervisor{
 		Run: run, BackoffMin: time.Second, BackoffMax: 8 * time.Second, StableAfter: 30 * time.Second,
 		Sleep: func(ctx context.Context, d time.Duration) { w.add(d) },
 		Now:   now, Log: slog.New(slog.DiscardHandler),

@@ -49,3 +49,4 @@ accept:
 	@scripts/aceite-fase-2.sh
 	@scripts/aceite-fase-3.sh
 	@scripts/aceite-fase-4.sh
+	@scripts/aceite-fase-5.sh

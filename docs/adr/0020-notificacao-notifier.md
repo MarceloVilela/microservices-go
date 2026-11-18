@@ -29,4 +29,9 @@ Se o SMTP ou o Mailpit consumirem esforço desproporcional na Fase 5, cortar o a
 
 ## Evidência
 
-Pendente. Testes da Fase 5: reentregar o mesmo `batch.completed` gera um log e um e-mail (visível no Mailpit); com o SMTP fora do ar o fluxo continua e a falha fica registrada.
+Registrada em 2026-11-18 (`specs/fase-5-notification.md`, `specs/execucao-fase-5.log`); **aguardando aprovação do usuário**.
+
+- Reentregar o mesmo `batch.completed` gera **um** registro em `notifications`, **um** e-mail (Mailpit real no aceite, SMTP falso nos testes) e **um** log; desligar a deduplicação quebra o teste (mutação).
+- SMTP fora do ar: o consumo continua, `last_error` fica na linha de dedup e há log `error`; o `slog` notifica mesmo assim.
+- Escolhas do usuário: dedup em tabela do Postgres (migração 0003, sem FK) e falha de destino sem retry (registra e dá ack).
+- Janela assumida: crash entre enviar e gravar a dedup reenvia o e-mail na reentrega (*at-least-once*). Réplicas concorrentes são serializadas por advisory lock (teste com duas réplicas).

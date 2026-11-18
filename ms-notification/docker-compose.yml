@@ -11,7 +11,13 @@ services:
         PKG: ./ms-notification/cmd/ms-notification
     environment:
       AMQP_URL: amqp://${RABBITMQ_USER:?rode ./run.sh, que gera o .env}:${RABBITMQ_PASS:?}@ms-queues:5672/
+      DATABASE_URL: postgres://app:${POSTGRES_PASS:?rode ./run.sh, que gera o .env}@ms-db:5432/app?sslmode=disable
       HTTP_ADDR: ":8084"
+      # destino SMTP opcional (ADR 0020): o Mailpit captura o e-mail e não envia nada; esvazie SMTP_ADDR para só o slog
+      SMTP_ADDR: mailpit:1025
+      SMTP_FROM: ms-go@ms-go.local
+      SMTP_TO: dev@ms-go.local
+    depends_on: [mailpit]
     ports:
       - "127.0.0.1:8084:8084"
     healthcheck:
@@ -23,6 +29,15 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    networks: [ms-go-network]
+
+  # só para o desenvolvimento: SMTP (1025) só na rede interna; UI e API em http://127.0.0.1:8025
+  mailpit:
+    container_name: ms-mailpit
+    image: axllent/mailpit:v1.34.0
+    ports:
+      - "127.0.0.1:8025:8025"
     restart: unless-stopped
     networks: [ms-go-network]
 

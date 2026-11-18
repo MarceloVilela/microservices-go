@@ -114,7 +114,7 @@ func setup(ctx context.Context, vals config.Values, log *slog.Logger) (*service.
 	}
 
 	backoffMax := max(vals.Duration("CONSUMER_BACKOFF_MAX"), time.Second)
-	sup := &consumer.Supervisor{
+	sup := &amqpx.Supervisor{
 		Run: cons.Run, BackoffMin: min(time.Second, backoffMax), BackoffMax: backoffMax, StableAfter: 30 * time.Second, Log: log,
 	}
 
