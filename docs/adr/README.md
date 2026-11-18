@@ -8,7 +8,7 @@ Decisões de arquitetura do projeto. Formato: Status, Contexto, Decisão, Altern
 |---|---|---|
 | 0008 HTTP (stdlib ou `chi`) | Fase 2 | middlewares (CORS, token, logging) escritos; **evidência registrada, aguardando aprovação** |
 | 0021 Quarentena do outbox e identidade da mensagem | Fase 3 | evidência registrada; **aguardando aprovação** |
-| 0013 Ordem FIFO | Fases 3 e 4 | cenário O2 do oráculo no Go com concorrência 1 |
+| 0013 Ordem FIFO | Fases 3 e 4 | G1 fechado no lado Go (Fase 4); **aguardando aprovação** |
 | 0017 Miniaturas | Fases 3 e 6 | escrita atômica e `ETag`/`304` |
 | 0020 `Notifier` | Fase 5 | e-mail uma vez no Mailpit; falha de destino isolada |
 | 0016 SSE sobre log de eventos | Fase 6 | reconexão com `Last-Event-ID` e `LISTEN/NOTIFY` |

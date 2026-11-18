@@ -1,6 +1,6 @@
 // Package consumer liga o app ao RabbitMQ: consumo com ack manual, N goroutines e as
-// republicações (degrau de retry e DLQ) com confirm. A reconexão automática do consumidor é da
-// Fase 4; aqui, se a conexão cair, Run devolve erro e o serviço sai (o compose o reinicia).
+// republicações (degrau de retry e DLQ) com confirm. Consumer.Run é uma sessão; quem a refaz
+// depois de uma queda é o Supervisor (ADR 0003).
 package consumer
 
 import (
@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -37,9 +38,14 @@ type Consumer struct {
 	RequeueDelay time.Duration
 	Handler      Handler
 	Log          *slog.Logger
+
+	connected atomic.Bool
 }
 
-// Run consome até ctx terminar (devolve nil) ou a conexão cair (devolve erro). No desligamento
+// Connected diz se há uma sessão consumindo agora (informativo; ver F4-8).
+func (c *Consumer) Connected() bool { return c.connected.Load() }
+
+// Run é uma sessão de consumo: até ctx terminar (devolve nil) ou a conexão ou o canal caírem (erro). No desligamento
 // espera as mensagens em voo por ShutdownTimeout; o que não terminou volta à fila (sem ack).
 func (c *Consumer) Run(ctx context.Context) error {
 	conn, err := amqpx.Dial(ctx, c.URL)
@@ -61,6 +67,9 @@ func (c *Consumer) Run(ctx context.Context) error {
 		return fmt.Errorf("consumir: %w", err)
 	}
 	closed := conn.NotifyClose(make(chan *amqp.Error, 1))
+	chClosed := ch.NotifyClose(make(chan *amqp.Error, 1)) // o broker pode fechar só o canal
+	c.connected.Store(true)
+	defer c.connected.Store(false)
 
 	// as mensagens em voo têm o próprio prazo, que só começa a contar no pedido de parada
 	procCtx, procCancel := context.WithCancel(context.WithoutCancel(ctx))
@@ -90,6 +99,8 @@ func (c *Consumer) Run(ctx context.Context) error {
 		runErr = err
 	case e := <-closed:
 		runErr = fmt.Errorf("conexão com o broker caiu: %w", errOrClosed(e))
+	case e := <-chClosed:
+		runErr = fmt.Errorf("canal com o broker caiu: %w", errOrClosed(e))
 	}
 	if runErr != nil {
 		procCancel() // falha de infraestrutura: não há o que esperar
@@ -118,10 +129,18 @@ func (c *Consumer) work(ctx, procCtx context.Context, deliveries <-chan amqp.Del
 				continue
 			}
 			if err := d.Ack(false); err != nil {
-				return fmt.Errorf("ack: %w", err)
+				return c.ackFailed("ack", d, err)
 			}
 		}
 	}
+}
+
+// ackFailed trata ack/nack que não chegou ao broker (canal fechado no meio do voo). Não é fatal
+// para o serviço: a sessão termina, o Supervisor reabre e o broker reentrega a mensagem, que a
+// ordem da ADR 0006 absorve (F4-2).
+func (c *Consumer) ackFailed(op string, d amqp.Delivery, err error) error {
+	c.Log.Warn("ack não chegou ao broker; a mensagem será reentregue", "op", op, "message_id", d.MessageId, "erro", err)
+	return fmt.Errorf("%s: %w", op, err)
 }
 
 func (c *Consumer) sleep(ctx context.Context) {

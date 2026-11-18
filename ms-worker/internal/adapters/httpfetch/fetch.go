@@ -14,6 +14,7 @@ import (
 	"net/netip"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -144,6 +145,10 @@ func (f *Fetcher) Fetch(ctx context.Context, sourceURL string) ([]byte, error) {
 	defer func() { _ = resp.Body.Close() }()
 
 	if err := statusErr(resp.StatusCode); err != nil {
+		var fail *domain.Failure
+		if code := resp.StatusCode; errors.As(err, &fail) && (code == http.StatusTooManyRequests || code == http.StatusServiceUnavailable) {
+			fail.RetryAfter = parseRetryAfter(resp.Header.Get("Retry-After"), time.Now())
+		}
 		return nil, err
 	}
 	if resp.ContentLength > f.cfg.MaxBytes {
@@ -190,4 +195,26 @@ func mapDoErr(err error) error {
 		return domain.NewTransient("falha de DNS", err)
 	}
 	return domain.NewTransient("erro de rede", err)
+}
+
+// maxRetryAfter limita o que um servidor pode pedir: acima do último degrau (5 min) não muda nada,
+// e o teto evita estouro na conversão para Duration.
+const maxRetryAfter = time.Hour
+
+// parseRetryAfter lê o Retry-After (RFC 9110: segundos inteiros ou data HTTP). Ausente, inválido,
+// negativo, zero ou data passada devolve 0 (ignorado).
+func parseRetryAfter(v string, now time.Time) time.Duration {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0
+	}
+	if n, err := strconv.ParseUint(v, 10, 32); err == nil {
+		return min(time.Duration(n)*time.Second, maxRetryAfter)
+	}
+	if t, err := http.ParseTime(v); err == nil {
+		if d := t.Sub(now); d > 0 {
+			return min(d, maxRetryAfter)
+		}
+	}
+	return 0
 }

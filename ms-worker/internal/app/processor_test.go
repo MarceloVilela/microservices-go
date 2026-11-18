@@ -6,10 +6,13 @@ import (
 	"log/slog"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/MarceloVilela/microservices-go/ms-worker/internal/app"
 	"github.com/MarceloVilela/microservices-go/ms-worker/internal/domain"
 )
+
+var ttls = []time.Duration{5 * time.Second, 30 * time.Second, 2 * time.Minute, 5 * time.Minute}
 
 const body = `{"v":1,"message_id":"m1","batch_id":"11111111-1111-4111-8111-111111111111","photo_id":"22222222-2222-4222-8222-222222222222","source_url":"https://picsum.photos/id/1/10/10"}`
 
@@ -18,6 +21,7 @@ type rig struct {
 	calls []string
 
 	status                  string
+	statusSeq               []string // respostas sucessivas de Status (sobrepõe status)
 	statusErr               error
 	fetchErr, thumbErr      error
 	saveErr, finishErr      error
@@ -32,6 +36,11 @@ type rig struct {
 
 func (r *rig) Status(context.Context, string) (string, error) {
 	r.calls = append(r.calls, "status")
+	if len(r.statusSeq) > 0 {
+		st := r.statusSeq[0]
+		r.statusSeq = r.statusSeq[1:]
+		return st, nil
+	}
 	if r.status == "" {
 		return app.StatusPending, r.statusErr
 	}
@@ -74,7 +83,7 @@ func (r *rig) DeadLetter(_ context.Context, _ app.Delivery, c domain.Class, reas
 }
 
 func (r *rig) proc() *app.Processor {
-	return &app.Processor{Photos: r, Fetcher: r, Thumbnailer: r, Thumbs: r, Router: r, Steps: 4, Log: slog.New(slog.DiscardHandler)}
+	return &app.Processor{Photos: r, Fetcher: r, Thumbnailer: r, Thumbs: r, Router: r, StepTTLs: ttls, Log: slog.New(slog.DiscardHandler)}
 }
 
 func handle(r *rig, attempt int) app.Action {
@@ -107,12 +116,45 @@ func TestFotoJaTerminadaSoDaAck(t *testing.T) {
 	}
 }
 
-func TestErroDoBancoNoEstadoDevolveAFila(t *testing.T) {
+func TestErroDoBancoNoEstadoConsomeDegrau(t *testing.T) {
 	r := &rig{statusErr: errors.New("conexão caiu")}
-	if got := handle(r, 0); got != app.Requeue {
+	if got := handle(r, 1); got != app.Ack {
 		t.Fatalf("ação = %v", got)
 	}
-	wantCalls(t, r, "status")
+	wantCalls(t, r, "status", "retry")
+	if !reflect.DeepEqual(r.retried, []int{1}) {
+		t.Errorf("degrau = %v", r.retried)
+	}
+}
+
+func TestInfraEsgotadaVaiParaADLQSemFecharAFoto(t *testing.T) {
+	r := &rig{statusErr: errors.New("conexão caiu")}
+	if got := handle(r, 4); got != app.Ack {
+		t.Fatalf("ação = %v", got)
+	}
+	// sem Finish (o banco está fora) e sem reler o estado: a foto segue pending
+	wantCalls(t, r, "status", "dlq")
+	if r.dlq[0] != "infrastructure:tentativas esgotadas: banco indisponível" {
+		t.Errorf("dlq = %v", r.dlq)
+	}
+}
+
+func TestRetryAfterEscolheODegrau(t *testing.T) {
+	r := &rig{fetchErr: &domain.Failure{Class: domain.Transient, Reason: "HTTP 429", RetryAfter: 45 * time.Second}}
+	if got := handle(r, 0); got != app.Ack {
+		t.Fatalf("ação = %v", got)
+	}
+	if !reflect.DeepEqual(r.retried, []int{2}) { // 45 s => retry.2m
+		t.Errorf("degrau = %v", r.retried)
+	}
+}
+
+func TestDLQReleEstadoEDesisteSeAFotoJaTerminou(t *testing.T) {
+	r := &rig{fetchErr: domain.NewPermanent("HTTP 404", nil), statusSeq: []string{app.StatusPending, app.StatusDone}}
+	if got := handle(r, 0); got != app.Ack {
+		t.Fatalf("ação = %v", got)
+	}
+	wantCalls(t, r, "status", "fetch", "status") // sem dlq nem finish
 }
 
 func TestFotoInexistenteVaiParaADLQ(t *testing.T) {
@@ -143,7 +185,7 @@ func TestFalhaDefinitivaVaiDireitoParaADLQEContaComoTerminada(t *testing.T) {
 		t.Fatalf("ação = %v", got)
 	}
 	// DLQ (com confirm) antes da transação; nada de arquivo
-	wantCalls(t, r, "status", "fetch", "dlq", "finish:failed")
+	wantCalls(t, r, "status", "fetch", "status", "dlq", "finish:failed")
 	if r.dlq[0] != "permanent:HTTP 404" {
 		t.Errorf("dlq = %v", r.dlq)
 	}
@@ -156,7 +198,7 @@ func TestFalhaDefinitivaVaiDireitoParaADLQEContaComoTerminada(t *testing.T) {
 func TestImagemInvalidaVemDaMiniatura(t *testing.T) {
 	r := &rig{thumbErr: domain.NewPermanent("imagem inválida", errors.New("x"))}
 	handle(r, 0)
-	wantCalls(t, r, "status", "fetch", "thumbnail", "dlq", "finish:failed")
+	wantCalls(t, r, "status", "fetch", "thumbnail", "status", "dlq", "finish:failed")
 }
 
 func TestFalhaTransitoriaVaiParaODegrauEDaAck(t *testing.T) {
@@ -177,7 +219,7 @@ func TestDegrausEsgotadosVaoParaADLQEFecham(t *testing.T) {
 	if got := handle(r, 4); got != app.Ack {
 		t.Fatalf("ação = %v", got)
 	}
-	wantCalls(t, r, "status", "fetch", "dlq", "finish:failed")
+	wantCalls(t, r, "status", "fetch", "status", "dlq", "finish:failed")
 	if r.dlq[0] != "exhausted:tentativas esgotadas: HTTP 503" {
 		t.Errorf("dlq = %v", r.dlq)
 	}
@@ -198,24 +240,24 @@ func TestFalhaNaDLQNaoFechaAFoto(t *testing.T) {
 	if got := handle(r, 0); got != app.Requeue {
 		t.Fatalf("ação = %v", got)
 	}
-	wantCalls(t, r, "status", "fetch", "dlq") // sem finish: a reentrega repete tudo
+	wantCalls(t, r, "status", "fetch", "status", "dlq") // sem finish: a reentrega repete tudo
 }
 
-func TestErroDoBancoNaTransacaoDevolveAFila(t *testing.T) {
+func TestErroDoBancoNaTransacaoConsomeDegrau(t *testing.T) {
 	r := &rig{finishErr: errors.New("deadlock")}
-	if got := handle(r, 0); got != app.Requeue {
+	if got := handle(r, 0); got != app.Ack {
 		t.Fatalf("ação = %v", got)
 	}
 	// o arquivo já está no lugar (rename atômico): a reentrega o sobrescreve com o mesmo conteúdo
-	wantCalls(t, r, "status", "fetch", "thumbnail", "save", "finish:done")
+	wantCalls(t, r, "status", "fetch", "thumbnail", "save", "finish:done", "retry")
 }
 
-func TestErroDeDiscoDevolveAFila(t *testing.T) {
+func TestErroDeDiscoConsomeDegrau(t *testing.T) {
 	r := &rig{saveErr: errors.New("disco cheio")}
-	if got := handle(r, 0); got != app.Requeue {
+	if got := handle(r, 0); got != app.Ack {
 		t.Fatalf("ação = %v", got)
 	}
-	wantCalls(t, r, "status", "fetch", "thumbnail", "save")
+	wantCalls(t, r, "status", "fetch", "thumbnail", "save", "retry")
 }
 
 func TestDesligandoNaoGastaDegrau(t *testing.T) {

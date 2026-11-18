@@ -1,0 +1,70 @@
+== 1. pilha pronta
+ok    ms-worker /readyz (200)
+ok    ms-ingest /readyz (200)
+ok    consumidor conectado (true)
+ok    photo.process vazia (0)
+== 2. O4 (R5b): mensagens enfileiradas com o worker parado sobrevivem ao reinício do broker
+ok    POST /batches (202)
+ok    photo.process com 3 Ready (3)
+ok    photo.process ainda com 3 Ready depois do reinício (3)
+ok    lote terminado (1)
+ok    fotos done (3)
+== 3. broker reiniciado com o worker no ar: o MESMO processo volta a consumir
+ok    consumidor conectado (true)
+ok    consumidor reconectou sozinho (true)
+ok    worker não foi reiniciado (2026-11-18T18:02:12.595825638Z)
+ok    POST depois do reinício (202)
+ok    lote 2 terminado sem reiniciar o worker (1)
+== 4. id inválido do dataset termina na DLQ com a causa, e a DLQ é inspecionável sem consumir
+ok    lote 3 terminado (1)
+ok    foto failed (1)
+ok    mensagem na DLQ (3)
+ok    DLQ mostra a classe
+ok    DLQ mostra o motivo (HTTP 404)
+ok    dlq.sh não consome (3)
+== 5. SIGTERM: o worker encerra com saída 0
+ok    saída do ms-worker (0)
+ok    ms-worker /readyz (200)
+
+ACEITE DA FASE 4: OK
+
+== make check (exit 0)
+ok  	github.com/MarceloVilela/microservices-go/platform/messages	1.051s
+ok  	github.com/MarceloVilela/microservices-go/platform/outbox	1.113s
+ok  	github.com/MarceloVilela/microservices-go/platform/service	1.160s
+ok  	github.com/MarceloVilela/microservices-go/platform/topology	1.037s
+ok  	github.com/MarceloVilela/microservices-go/ms-ingest/internal/adapters/httpapi	1.096s
+ok  	github.com/MarceloVilela/microservices-go/ms-ingest/internal/app	1.028s
+ok  	github.com/MarceloVilela/microservices-go/ms-ingest/internal/domain	1.038s
+ok  	github.com/MarceloVilela/microservices-go/ms-worker/internal/adapters/consumer	1.034s
+ok  	github.com/MarceloVilela/microservices-go/ms-worker/internal/adapters/filestore	1.226s
+ok  	github.com/MarceloVilela/microservices-go/ms-worker/internal/adapters/httpfetch	1.409s
+ok  	github.com/MarceloVilela/microservices-go/ms-worker/internal/adapters/thumb	8.099s
+ok  	github.com/MarceloVilela/microservices-go/ms-worker/internal/app	1.051s
+ok  	github.com/MarceloVilela/microservices-go/ms-queues/internal/initcmd	1.027s
+ok  	github.com/MarceloVilela/microservices-go/archtest	0.037s
+0 issues.
+0 issues.
+0 issues.
+0 issues.
+0 issues.
+0 issues.
+0 issues.
+0 issues.
+No vulnerabilities found.
+No vulnerabilities found.
+No vulnerabilities found.
+No vulnerabilities found.
+No vulnerabilities found.
+No vulnerabilities found.
+No vulnerabilities found.
+No vulnerabilities found.
+== make integration (exit 0)
+ok  	github.com/MarceloVilela/microservices-go/tests	224.839s
+?   	github.com/MarceloVilela/microservices-go/tests/cmd/httpsprobe	[no test files]
+exit=0
+== make accept (exit 0, aceites 1 a 4)
+ACEITE DA FASE 1: OK
+ACEITE DA FASE 2: OK
+ACEITE DA FASE 3: OK
+ACEITE DA FASE 4: OK

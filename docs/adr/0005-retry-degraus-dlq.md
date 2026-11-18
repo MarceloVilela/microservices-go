@@ -50,4 +50,4 @@ Trocar pelo retry nativo da quorum queue ou por retry no Postgres se, **na carga
 
 ## Evidência
 
-**S2 e S1 executados em 2026-11-17** (tabela acima). Limites: uma execução de cada, localhost, broker de um nó; a escada real foi esperada só até 30 s (2 min e 5 min são configuração); a quorum foi medida só em latência de confirm e reinício, e o herd do nativo não foi medido; o retry no Postgres não foi testado.
+**S2 e S1 executados em 2026-11-17** (tabela acima). **Fase 4 (2026-11-18):** escada completa ponta a ponta (política `message-ttl` curta nas filas `retry.*`): 503 persistente atravessa os 4 degraus e vai à DLQ como `exhausted`; `Retry-After: 45` vai para `retry.2m`; erro de banco/disco consome degrau (classe `infrastructure`, foto fica `pending`). Limites: uma execução de cada, localhost, broker de um nó; a escada real foi esperada só até 30 s (2 min e 5 min são configuração); a quorum foi medida só em latência de confirm e reinício, e o herd do nativo não foi medido; o retry no Postgres não foi testado.

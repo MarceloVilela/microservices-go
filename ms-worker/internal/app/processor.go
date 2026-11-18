@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"time"
 
 	"github.com/MarceloVilela/microservices-go/ms-worker/internal/domain"
 	"github.com/MarceloVilela/microservices-go/ms-worker/internal/fault"
@@ -97,9 +98,9 @@ type Processor struct {
 	Thumbnailer Thumbnailer
 	Thumbs      Thumbs
 	Router      Router
-	// Steps é o número de degraus de retry (4 na topologia atual).
-	Steps int
-	Log   *slog.Logger
+	// StepTTLs são os TTLs dos degraus de retry, crescentes (um por fila da escada). Vazio = sem retry.
+	StepTTLs []time.Duration
+	Log      *slog.Logger
 }
 
 // Handle executa a ordem de operações: (1) estado no banco, (2) baixar e gerar a miniatura,
@@ -120,8 +121,7 @@ func (p *Processor) Handle(ctx context.Context, d Delivery) Action {
 		log.Error("foto inexistente; indo para a DLQ")
 		return p.deadLetterOnly(ctx, d, domain.Permanent, "foto inexistente")
 	case err != nil:
-		log.Warn("ler estado da foto", "erro", err)
-		return Requeue
+		return p.failed(ctx, log, d, msg, domain.NewInfrastructure("banco indisponível", err))
 	case status != StatusPending:
 		log.Info("foto já terminada; só ack", "status", status)
 		return Ack
@@ -134,8 +134,7 @@ func (p *Processor) Handle(ctx context.Context, d Delivery) Action {
 		}
 		var f *domain.Failure
 		if !errors.As(err, &f) {
-			log.Warn("gravar miniatura", "erro", err) // disco: infraestrutura
-			return Requeue
+			f = domain.NewInfrastructure("disco indisponível", err)
 		}
 		return p.failed(ctx, log, d, msg, f)
 	}
@@ -143,8 +142,7 @@ func (p *Processor) Handle(ctx context.Context, d Delivery) Action {
 	// 4. transação
 	out, err := p.Photos.Finish(ctx, Finish{PhotoID: msg.PhotoID, Status: StatusDone})
 	if err != nil {
-		log.Warn("gravar resultado", "erro", err)
-		return Requeue
+		return p.failed(ctx, log, d, msg, domain.NewInfrastructure("banco indisponível", err))
 	}
 	fault.At(fault.AfterCommit)
 	log.Info("foto concluída", "duplicada", out.Duplicate, "lote_completo", out.BatchCompleted)
@@ -175,24 +173,47 @@ func classified(err error) error {
 	return domain.NewTransient("erro não classificado", err)
 }
 
+// failed decide o destino de uma falha. Transitória e de infraestrutura consomem degrau (com
+// Retry-After pulando degraus); esgotadas, vão à DLQ. Só a transitória esgotada e a definitiva
+// fecham a foto como failed: com a infraestrutura fora, a foto fica pending para reprocessar.
 func (p *Processor) failed(ctx context.Context, log *slog.Logger, d Delivery, msg messages.PhotoProcess, f *domain.Failure) Action {
 	class, reason := f.Class, f.Reason
-	if class == domain.Transient {
-		if d.Attempt < p.Steps {
-			if err := p.Router.Retry(ctx, d.Attempt, d); err != nil {
+	if class == domain.Transient || class == domain.Infrastructure {
+		if ctx.Err() != nil {
+			return Requeue // desligando: não gasta degrau
+		}
+		if d.Attempt < len(p.StepTTLs) {
+			step := StepFor(d.Attempt, f.RetryAfter, p.StepTTLs)
+			if err := p.Router.Retry(ctx, step, d); err != nil {
 				log.Warn("republicar no degrau de retry", "erro", err)
 				return Requeue
 			}
-			log.Info("falha transitória; indo para o degrau", "degrau", d.Attempt, "motivo", reason, "erro", f.Err)
+			log.Info("falha; indo para o degrau", "classe", class, "degrau", step, "retry_after", f.RetryAfter, "motivo", reason, "erro", f.Err)
 			return Ack
 		}
-		class, reason = domain.Exhausted, "tentativas esgotadas: "+reason
+		if class == domain.Transient {
+			class, reason = domain.Exhausted, "tentativas esgotadas: "+reason
+		} else {
+			reason = "tentativas esgotadas: " + reason
+		}
 	}
-	log.Warn("falha definitiva; DLQ", "classe", class, "motivo", reason, "erro", f.Err)
+	log.Warn("falha sem retry; DLQ", "classe", class, "motivo", reason, "erro", f.Err)
+	closes := class != domain.Infrastructure
+	if closes {
+		// D2 (Fase 4): reler o estado antes da DLQ evita mandar para lá uma foto que uma entrega
+		// concorrente já concluiu. A janela que sobra é só entre esta leitura e o Finish.
+		if st, err := p.Photos.Status(ctx, msg.PhotoID); err == nil && st != StatusPending {
+			log.Info("foto já terminada por outra entrega; só ack", "status", st)
+			return Ack
+		}
+	}
 	// DLQ antes da transação e do ack: se morrer no meio, a reentrega repete e a DLQ pode ter duplicata
 	if err := p.Router.DeadLetter(ctx, d, class, reason); err != nil {
 		log.Warn("publicar na DLQ", "erro", err)
 		return Requeue
+	}
+	if !closes {
+		return Ack
 	}
 	if _, err := p.Photos.Finish(ctx, Finish{PhotoID: msg.PhotoID, Status: StatusFailed, FailClass: string(class), FailReason: reason}); err != nil {
 		log.Warn("gravar falha da foto", "erro", err)

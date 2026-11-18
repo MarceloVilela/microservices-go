@@ -3,8 +3,8 @@
 Pipeline de processamento de fotos em microsserviços **Go**, sobre **RabbitMQ 4** e **PostgreSQL**, com painel
 **Angular** opcional que mostra a fila ao vivo.
 
-> **Status: Fase 1 (esqueleto) implementada.** Há monorepo Go, Docker, CI e a topologia do broker; os serviços ainda só
-> expõem `/healthz` e `/readyz`, sem regra de negócio. O plano continua sendo um rascunho para aprovação.
+> **Status: Fases 0 a 3 mergeadas; Fase 4 (resiliência) implementada, sem PR.** Há monorepo Go, Docker, CI, topologia do broker, `ms-ingest` e `ms-worker`
+> (reconexão do consumidor, escada de retry e DLQ inspecionável: `docs/dlq.md`); `ms-api` e `ms-notification` ainda só expõem `/healthz` e `/readyz`. O plano continua sendo um rascunho para aprovação.
 >
 > Subir: `./run.sh` (RabbitMQ, `topology-init` e os 4 serviços); verificar: `make check`, `make integration`, `make accept`.
 
@@ -44,8 +44,8 @@ Serviços não importam uns aos outros. Diagrama e detalhes na seção 6 de [`do
 | 0 | Auditoria do v1, spec, ADRs e spikes | G0 fechado; mergeada |
 | 1 | Esqueleto: monorepo, Docker, CI, lint e topologia do broker | mergeada |
 | 2 | `ms-ingest`: API, outbox e publicação com confirmação | mergeada |
-| 3 | `ms-worker`: consumo, miniatura, idempotência e fim de lote | implementada, aceite verde; PR pendente |
-| 4 | Resiliência: retry, DLQ, reconexão e shutdown | pendente |
+| 3 | `ms-worker`: consumo, miniatura, idempotência e fim de lote | mergeada |
+| 4 | Resiliência: retry, DLQ, reconexão e shutdown | implementada, aceite verde; PR pendente |
 | 5 | `ms-notification` | pendente |
 | 6 | `ms-api`: leitura, SSE e DLQ | pendente |
 | 7 | Observabilidade, segurança e carga | pendente |

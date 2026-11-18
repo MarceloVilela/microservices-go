@@ -240,3 +240,50 @@ func TestFalhaDeDNSEhTransitoriaENaoAlteraAConfig(t *testing.T) {
 		t.Errorf("a slice do chamador foi alterada: %q", hosts[0])
 	}
 }
+
+func TestParseRetryAfter(t *testing.T) {
+	now := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	for v, want := range map[string]time.Duration{
+		"45":                                 45 * time.Second,
+		" 7 ":                                7 * time.Second,
+		"0":                                  0,
+		"-3":                                 0,
+		"lixo":                               0,
+		"":                                   0,
+		"1.5":                                0,
+		"99999999999999999999":               0,
+		"Wed, 18 Nov 2026 12:00:30 GMT":      30 * time.Second,
+		"Wed, 18 Nov 2026 11:00:00 GMT":      0, // data no passado
+		"Wed, 18 Nov 2026 12:00:30 +0300 XX": 0,
+	} {
+		if got := httpfetch.ParseRetryAfter(v, now); got != want {
+			t.Errorf("%q: %v, quer %v", v, got, want)
+		}
+	}
+}
+
+func TestRetryAfterVaiNaFalha(t *testing.T) {
+	for _, code := range []int{429, 503} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Retry-After", "45")
+			w.WriteHeader(code)
+		}))
+		_, err := httpfetch.New(relaxed("127.0.0.1")).Fetch(context.Background(), srv.URL)
+		srv.Close()
+		var f *domain.Failure
+		if !errors.As(err, &f) || f.Class != domain.Transient || f.RetryAfter != 45*time.Second {
+			t.Errorf("%d: %+v", code, err)
+		}
+	}
+	// 500 não carrega Retry-After
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "45")
+		w.WriteHeader(500)
+	}))
+	defer srv.Close()
+	_, err := httpfetch.New(relaxed("127.0.0.1")).Fetch(context.Background(), srv.URL)
+	var f *domain.Failure
+	if !errors.As(err, &f) || f.RetryAfter != 0 {
+		t.Errorf("500: %+v", err)
+	}
+}

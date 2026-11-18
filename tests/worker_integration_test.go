@@ -15,6 +15,8 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -84,6 +86,7 @@ func bigPNG() []byte { // 3000x3000 = 9 Mpx, cinza uniforme (poucos KB)
 type imageServer struct {
 	*httptest.Server
 	flakyHits atomic.Int32
+	slowHits  atomic.Int32
 }
 
 func newImageServer(t *testing.T) *imageServer {
@@ -100,6 +103,16 @@ func newImageServer(t *testing.T) *imageServer {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
+		_, _ = w.Write(good)
+	})
+	mux.HandleFunc("/always-503", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) })
+	mux.HandleFunc("/retry-after", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "45")
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+	mux.HandleFunc("/slow", func(w http.ResponseWriter, _ *http.Request) {
+		s.slowHits.Add(1)
+		time.Sleep(1500 * time.Millisecond)
 		_, _ = w.Write(good)
 	})
 	s.Server = httptest.NewServer(mux)
@@ -149,6 +162,28 @@ func startWorker(t *testing.T, amqpURL, dbURL, thumbs, allowedHost string, extra
 		}
 	})
 	return w
+}
+
+// connected lê o /statusz: o consumidor tem sessão aberta agora?
+func (w *workerProc) connected() bool {
+	resp, err := http.Get(w.base + "/statusz")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	var v struct {
+		Connected bool `json:"consumer_connected"`
+	}
+	return json.NewDecoder(resp.Body).Decode(&v) == nil && v.Connected
+}
+
+func (w *workerProc) alive() bool {
+	select {
+	case <-w.done:
+		return false
+	default:
+		return true
+	}
 }
 
 func (w *workerProc) status(path string) int {
@@ -578,4 +613,202 @@ func TestWorkerEsperaOEsquemaEConsomeDepois(t *testing.T) {
 	batchID, _, bodies := seed(t, p, srv.URL+"/ok/1")
 	publish(t, url, bodies...)
 	eventually(t, 30*time.Second, "lote terminado depois da migração", func() bool { return batchDone(t, p, batchID) })
+}
+
+// ---- Fase 4: resiliência ----
+
+// rabbitctl roda rabbitmqctl no container do broker compartilhado.
+func rabbitctl(t *testing.T, args ...string) {
+	t.Helper()
+	code, out, err := rbCont.Exec(context.Background(), append([]string{"rabbitmqctl"}, args...))
+	if err != nil || code != 0 {
+		b, _ := io.ReadAll(out)
+		t.Fatalf("rabbitmqctl %v: code=%d err=%v\n%s", args, code, err, b)
+	}
+}
+
+// fastRetry encurta o TTL efetivo dos degraus (a política vence o TTL da fila quando é menor).
+func fastRetry(t *testing.T, ms int) {
+	t.Helper()
+	rabbitctl(t, "set_policy", "fast-retry", `^photo\.process\.retry\.`, fmt.Sprintf(`{"message-ttl":%d}`, ms), "--apply-to", "queues")
+	t.Cleanup(func() { rabbitctl(t, "clear_policy", "fast-retry") })
+}
+
+// O4 (R5b): lote publicado com o worker parado; o broker reinicia; as mensagens continuam lá
+// (fila durável, mensagem persistente) e o worker, ao subir, termina o lote.
+func TestWorkerO4BrokerReiniciadoComMensagensNaFila(t *testing.T) {
+	url := setupBroker(t)
+	dbURL, p := migrated(t)
+	srv, thumbs := newImageServer(t), t.TempDir()
+	batchID, _, bodies := seed(t, p, srv.URL+"/ok/1", srv.URL+"/ok/2", srv.URL+"/ok/3")
+	publish(t, url, bodies...)
+	if n := queueMessages(t, url, topology.PhotoProcess.Name); n != 3 {
+		t.Fatalf("antes: messages_ready = %d, quer 3", n)
+	}
+	rabbitctl(t, "stop_app")
+	rabbitctl(t, "start_app")
+	eventually(t, 60*time.Second, "broker de volta com as 3 mensagens", func() bool {
+		c, err := amqp.Dial(url)
+		if err != nil {
+			return false
+		}
+		defer c.Close()
+		ch, err := c.Channel()
+		if err != nil {
+			return false
+		}
+		q, err := ch.QueueDeclarePassive(topology.PhotoProcess.Name, true, false, false, false, nil)
+		return err == nil && q.Messages == 3
+	})
+	startWorker(t, url, dbURL, thumbs, "127.0.0.1")
+	eventually(t, 30*time.Second, "lote terminado depois do reinício", func() bool { return batchDone(t, p, batchID) })
+}
+
+// O mesmo processo volta a consumir depois que o broker some e volta (sem restart do worker).
+func TestWorkerReconectaSozinhoQuandoOBrokerCaiEVolta(t *testing.T) {
+	realURL, dbURL := setupBroker(t), freshDB(t)
+	conn, err := amqp.ParseURI(realURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	px := newProxy(t, net.JoinHostPort(conn.Host, fmt.Sprint(conn.Port)))
+	viaProxy := fmt.Sprintf("amqp://%s:%s@%s/", conn.Username, conn.Password, px.addr)
+	p := pool(t, dbURL)
+	if err := db.Migrate(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	srv, thumbs := newImageServer(t), t.TempDir()
+
+	w := startWorker(t, viaProxy, dbURL, thumbs, "127.0.0.1", "CONSUMER_BACKOFF_MAX=2s")
+	eventually(t, 30*time.Second, "consumidor conectado", w.connected)
+	batch1, _, b1 := seed(t, p, srv.URL+"/ok/1")
+	publish(t, realURL, b1...)
+	eventually(t, 30*time.Second, "lote 1", func() bool { return batchDone(t, p, batch1) })
+
+	px.Stop() // o broker "cai": conexões derrubadas, porta fechada
+	eventually(t, 15*time.Second, "consumidor percebe a queda", func() bool { return !w.connected() })
+	batch2, _, b2 := seed(t, p, srv.URL+"/ok/2", srv.URL+"/ok/3")
+	publish(t, realURL, b2...) // direto no broker real; o worker só enxerga pelo proxy
+	time.Sleep(time.Second)    // algumas tentativas de reconexão falham
+	if !w.alive() {
+		t.Fatal("o worker saiu com o broker fora (deveria esperar)")
+	}
+
+	px.Start(t)
+	eventually(t, 30*time.Second, "o mesmo processo reconecta", w.connected)
+	eventually(t, 30*time.Second, "lote 2 termina sem restart", func() bool { return batchDone(t, p, batch2) })
+	if !w.alive() {
+		t.Error("o worker precisa ser o mesmo processo")
+	}
+}
+
+// Broker fora no boot: o worker espera, não sai, e consome quando o broker aparece.
+func TestWorkerBootComBrokerForaEspera(t *testing.T) {
+	realURL, dbURL := setupBroker(t), freshDB(t)
+	conn, err := amqp.ParseURI(realURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	px := newProxy(t, net.JoinHostPort(conn.Host, fmt.Sprint(conn.Port)))
+	viaProxy := fmt.Sprintf("amqp://%s:%s@%s/", conn.Username, conn.Password, px.addr)
+	px.Stop()
+	p := pool(t, dbURL)
+	if err := db.Migrate(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	w := startWorker(t, viaProxy, dbURL, t.TempDir(), "127.0.0.1", "CONSUMER_BACKOFF_MAX=2s")
+	eventually(t, 30*time.Second, "/healthz", func() bool { return w.status("/healthz") == 200 })
+	time.Sleep(2 * time.Second)
+	if !w.alive() || w.connected() {
+		t.Fatalf("alive=%v connected=%v: deveria estar vivo e sem sessão", w.alive(), w.connected())
+	}
+	srv := newImageServer(t)
+	batchID, _, bodies := seed(t, p, srv.URL+"/ok/1")
+	publish(t, realURL, bodies...)
+	px.Start(t)
+	eventually(t, 30*time.Second, "lote terminado", func() bool { return batchDone(t, p, batchID) })
+}
+
+// Escada completa: 503 persistente atravessa os 4 degraus (TTL encurtado por política) e termina
+// na DLQ como exhausted; a foto fica failed e o lote fecha.
+func TestWorkerEscadaCompletaTerminaNaDLQ(t *testing.T) {
+	url := setupBroker(t)
+	fastRetry(t, 300)
+	dbURL, p := migrated(t)
+	srv, thumbs := newImageServer(t), t.TempDir()
+	batchID, ids, bodies := seed(t, p, srv.URL+"/always-503", srv.URL+"/missing")
+	publish(t, url, bodies...)
+	startWorker(t, url, dbURL, thumbs, "127.0.0.1")
+
+	eventually(t, 60*time.Second, "lote terminado", func() bool { return batchDone(t, p, batchID) })
+	for _, id := range ids {
+		if photoStatus(t, p, id) != "failed" {
+			t.Errorf("foto %s: status %s, quer failed", id, photoStatus(t, p, id))
+		}
+	}
+	got := map[string]amqp.Delivery{}
+	for _, d := range drain(t, url, topology.PhotoDLQ.Name) {
+		var m messages.PhotoProcess
+		_ = json.Unmarshal(d.Body, &m)
+		got[m.PhotoID] = d
+		_ = d.Nack(false, true)
+	}
+	if len(got) != 2 {
+		t.Fatalf("DLQ com %d fotos, quer 2", len(got))
+	}
+	if c := got[ids[0]].Headers[messages.HeaderFailureClass]; c != "exhausted" {
+		t.Errorf("503: x-failure-class = %v, quer exhausted", c)
+	}
+	if c := got[ids[1]].Headers[messages.HeaderFailureClass]; c != "permanent" {
+		t.Errorf("404 (id inexistente no dataset): x-failure-class = %v, quer permanent", c)
+	}
+	if r, _ := got[ids[1]].Headers[messages.HeaderFailureReason].(string); r != "HTTP 404" {
+		t.Errorf("404: x-failure-reason = %q", r)
+	}
+}
+
+// Retry-After de 45 s pula para o degrau de 2 min.
+func TestWorkerRetryAfterEscolheODegrau(t *testing.T) {
+	url := setupBroker(t)
+	dbURL, p := migrated(t)
+	srv := newImageServer(t)
+	_, ids, bodies := seed(t, p, srv.URL+"/retry-after")
+	publish(t, url, bodies...)
+	startWorker(t, url, dbURL, t.TempDir(), "127.0.0.1")
+	eventually(t, 30*time.Second, "mensagem em photo.process.retry.2m", func() bool {
+		return queueMessages(t, url, "photo.process.retry.2m") == 1
+	})
+	if n := queueMessages(t, url, "photo.process.retry.5s"); n != 0 {
+		t.Errorf("retry.5s = %d, quer 0", n)
+	}
+	if photoStatus(t, p, ids[0]) != "pending" {
+		t.Error("a foto deveria seguir pending")
+	}
+}
+
+// SIGTERM com mensagem em voo: termina a mensagem, dá ack e sai com 0 dentro do prazo.
+func TestWorkerSIGTERMComMensagemEmVoo(t *testing.T) {
+	url := setupBroker(t)
+	dbURL, p := migrated(t)
+	srv, thumbs := newImageServer(t), t.TempDir()
+	batchID, ids, bodies := seed(t, p, srv.URL+"/slow")
+	publish(t, url, bodies...)
+	w := startWorker(t, url, dbURL, thumbs, "127.0.0.1")
+	eventually(t, 30*time.Second, "download em andamento", func() bool { return srv.slowHits.Load() == 1 })
+
+	start := time.Now()
+	_ = w.cmd.Process.Signal(syscall.SIGTERM)
+	w.waitExit(t)
+	if code := w.cmd.ProcessState.ExitCode(); code != 0 {
+		t.Errorf("saída = %d, quer 0", code)
+	}
+	if d := time.Since(start); d > 6*time.Second {
+		t.Errorf("encerrou em %s (SHUTDOWN_TIMEOUT=5s)", d)
+	}
+	if !batchDone(t, p, batchID) || photoStatus(t, p, ids[0]) != "done" {
+		t.Error("a mensagem em voo deveria ter terminado antes de sair")
+	}
+	if n := queueMessages(t, url, topology.PhotoProcess.Name); n != 0 {
+		t.Errorf("photo.process = %d, quer 0 (houve ack)", n)
+	}
 }

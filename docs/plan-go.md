@@ -262,8 +262,10 @@ Entregáveis em `specs/`:
 
 ### Fase 4: Resiliência
 
+> **Status (2026-11-18): implementada na branch `fase-4-resiliencia`, aceite verde, sem PR.** Spec e desvios: `specs/fase-4-resiliencia.md`; evidência: `specs/execucao-fase-4.log`. D1 (infra consome degrau) e D2 (reler estado antes da DLQ) resolvidas; `Requeue` sem limite eliminado.
+
 - Retry por degraus, falha definitiva direto à DLQ, DLQ com inspeção documentada.
-- **Herdado da Fase 3 (code-review):** limitar o `Requeue` de erro de banco persistente (contador de entregas e decisão de DLQ); decidir a ordem DLQ × transação antes da Fase 6 (ver `specs/fase-3-worker.md`).
+- **Herdado da Fase 3 (code-review), resolvido:** erro de banco ou disco consome degrau (classe `infrastructure`; esgotado vai à DLQ e a foto fica `pending`); DLQ × transação: relê o estado antes da DLQ e aceita a janela residual (ver `specs/fase-4-resiliencia.md`).
 - Reconexão do worker, do ingest e do relay com backoff; shutdown gracioso (N3).
 - Cenários do oráculo: consumidor parado (R5 do v1) **e** broker reiniciado (mais forte que o v1).
 

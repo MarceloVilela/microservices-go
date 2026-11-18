@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -58,6 +59,7 @@ func spec() service.Spec {
 			{Name: "MAX_IMAGE_BYTES", Default: "10485760", Validate: intRange(1, 1<<30)},
 			{Name: "MAX_PIXELS", Default: "25000000", Validate: intRange(1, 1<<31-1)},
 			{Name: "SHUTDOWN_TIMEOUT", Default: "10s", Validate: config.ValidDuration},
+			{Name: "CONSUMER_BACKOFF_MAX", Default: "30s", Validate: config.ValidDuration},
 		},
 		Setup: setup,
 	}
@@ -103,7 +105,7 @@ func setup(ctx context.Context, vals config.Values, log *slog.Logger) (*service.
 		Thumbnailer: thumb.Maker{MaxPixels: atoi(vals, "MAX_PIXELS")},
 		Thumbs:      files,
 		Router:      consumer.Router{Publisher: pub},
-		Steps:       len(topology.RetrySteps()),
+		StepTTLs:    stepTTLs(),
 		Log:         log,
 	}
 	cons := &consumer.Consumer{
@@ -111,7 +113,19 @@ func setup(ctx context.Context, vals config.Values, log *slog.Logger) (*service.
 		ShutdownTimeout: vals.Duration("SHUTDOWN_TIMEOUT"), Handler: proc, Log: log,
 	}
 
+	backoffMax := max(vals.Duration("CONSUMER_BACKOFF_MAX"), time.Second)
+	sup := &consumer.Supervisor{
+		Run: cons.Run, BackoffMin: min(time.Second, backoffMax), BackoffMax: backoffMax, StableAfter: 30 * time.Second, Log: log,
+	}
+
 	return &service.Runtime{
+		// informativo: o /readyz não depende do consumidor (uma queda breve do broker não deve reiniciar o serviço)
+		Mount: func(mux *http.ServeMux) {
+			mux.HandleFunc("GET /statusz", func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprintf(w, `{"consumer_connected":%t}`+"\n", cons.Connected())
+			})
+		},
 		Ready: func(ctx context.Context) error {
 			if err := pool.Ping(ctx); err != nil {
 				return err
@@ -125,10 +139,23 @@ func setup(ctx context.Context, vals config.Values, log *slog.Logger) (*service.
 			if err := waitSchema(ctx, pool, log); err != nil {
 				return err
 			}
-			return cons.Run(ctx)
+			return sup.Serve(ctx)
 		}},
 		Close: func() { pub.Close(); pool.Close() },
 	}, nil
+}
+
+// stepTTLs lê os TTLs da escada na própria topologia (fonte única dos degraus).
+func stepTTLs() []time.Duration {
+	var out []time.Duration
+	for _, q := range topology.RetrySteps() {
+		ms, ok := q.Args["x-message-ttl"].(int32)
+		if !ok || ms <= 0 {
+			panic("topology: degrau " + q.Name + " sem x-message-ttl int32 positivo") // erro de programação, aparece no boot
+		}
+		out = append(out, time.Duration(ms)*time.Millisecond)
+	}
+	return out
 }
 
 // waitSchema espera o ms-ingest migrar o esquema; consumir antes só geraria reentregas.
