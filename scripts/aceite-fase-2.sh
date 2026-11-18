@@ -38,6 +38,12 @@ post() { # chave json -> imprime "corpo status" (o status é a última palavra)
   curl -s -w ' %{http_code}' -X POST "$INGEST/batches" -H 'Content-Type: application/json' -H "Idempotency-Key: $1" -d "$2" --max-time 5 || true
 }
 
+# O ms-worker (Fase 3) consumiria as mensagens que este aceite conta como Ready; fica parado
+# até o aceite da Fase 3, que o religa. As mensagens deste aceite são processadas então.
+docker stop ms-worker >/dev/null 2>&1 || true
+# rodado sozinho (ou com falha no meio), o worker não pode ficar parado: religa na saída
+trap 'docker start ms-worker >/dev/null 2>&1 || true' EXIT
+
 echo "== 1. lote válido: 202, fotos e outbox na mesma transação, fila com N mensagens"
 wait_for 200 "ms-ingest /readyz" status "$INGEST/readyz"
 base="$(ready_msgs)"

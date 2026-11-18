@@ -11,7 +11,14 @@ services:
         PKG: ./ms-worker/cmd/ms-worker
     environment:
       AMQP_URL: amqp://${RABBITMQ_USER:?rode ./run.sh, que gera o .env}:${RABBITMQ_PASS:?}@ms-queues:5672/
+      DATABASE_URL: postgres://app:${POSTGRES_PASS:?rode ./run.sh, que gera o .env}@ms-db:5432/app?sslmode=disable
       HTTP_ADDR: ":8083"
+      THUMBS_DIR: /data/thumbs
+      # modo oráculo (R3, ADR 0013): FIFO só com concorrência 1 e prefetch 1; suba para ganhar vazão
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
+      WORKER_PREFETCH: ${WORKER_PREFETCH:-1}
+    volumes:
+      - thumbs:/data/thumbs
     ports:
       - "127.0.0.1:8083:8083"
     healthcheck:
@@ -23,8 +30,15 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    # maior que SHUTDOWN_TIMEOUT (10s) + FETCH_TIMEOUT (10s): o Docker só dá SIGKILL depois de o worker drenar
+    stop_grace_period: 30s
     restart: unless-stopped
     networks: [ms-go-network]
+
+volumes:
+  thumbs:
+    # compartilhado com o ms-api (Fase 6), que serve as miniaturas
+    name: ms-go-thumbs
 
 networks:
   ms-go-network:

@@ -63,8 +63,8 @@ expect "ms-worker /readyz depois do topology-init" 200 "$(retry_code localhost:8
 echo "== 4. config check e healthcheck dentro da imagem final"
 set +e
 docker run --rm ms-worker-app config check >/dev/null 2>&1; expect "config check sem AMQP_URL sai 1" 1 "$?"
-docker run --rm -e AMQP_URL=amqp://u:p@h/ ms-worker-app config check >/dev/null 2>&1; expect "config check válido sai 0" 0 "$?"
-docker run --rm -e 'http-addr=:1' -e AMQP_URL=amqp://u:p@h/ ms-worker-app config check >/dev/null 2>&1; expect "nome de variável inválido sai 1" 1 "$?"
+docker run --rm -e AMQP_URL=amqp://u:p@h/ -e DATABASE_URL=postgres://u:p@h/d ms-worker-app config check >/dev/null 2>&1; expect "config check válido sai 0" 0 "$?"
+docker run --rm -e 'http-addr=:1' -e AMQP_URL=amqp://u:p@h/ -e DATABASE_URL=postgres://u:p@h/d ms-worker-app config check >/dev/null 2>&1; expect "nome de variável inválido sai 1" 1 "$?"
 docker run --rm ms-ingest-app healthcheck >/dev/null 2>&1; expect "healthcheck sem servidor sai 1" 1 "$?"
 set -e
 

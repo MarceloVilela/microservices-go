@@ -42,9 +42,9 @@ Serviços não importam uns aos outros. Diagrama e detalhes na seção 6 de [`do
 | Fase | Tema | Status |
 |---|---|---|
 | 0 | Auditoria do v1, spec, ADRs e spikes | G0 fechado; mergeada |
-| 1 | Esqueleto: monorepo, Docker, CI, lint e topologia do broker | implementada; PR pendente |
-| 2 | `ms-ingest`: API, outbox e publicação com confirmação | pendente |
-| 3 | `ms-worker`: consumo, miniatura, idempotência e fim de lote | pendente |
+| 1 | Esqueleto: monorepo, Docker, CI, lint e topologia do broker | mergeada |
+| 2 | `ms-ingest`: API, outbox e publicação com confirmação | mergeada |
+| 3 | `ms-worker`: consumo, miniatura, idempotência e fim de lote | implementada, aceite verde; PR pendente |
 | 4 | Resiliência: retry, DLQ, reconexão e shutdown | pendente |
 | 5 | `ms-notification` | pendente |
 | 6 | `ms-api`: leitura, SSE e DLQ | pendente |
@@ -59,7 +59,7 @@ O backend (fases 0 a 7) fecha sem o painel.
 - [`docs/plan-go.md`](docs/plan-go.md): plano spec-driven completo (requisitos, gates, arquitetura, fases, riscos).
 - [`docs/plan-go-code-review.md`](docs/plan-go-code-review.md): revisão do plano e rastreio das correções.
 - [`docs/go101.md`](docs/go101.md): como o projeto foi escolhido.
-- [`docs/adr/`](docs/adr): 20 ADRs; 10 aceitas e 10 `proposta` até as fases correspondentes (nenhuma é aceita sem evidência e aprovação).
+- [`docs/adr/`](docs/adr): 21 ADRs; 12 aceitas e 9 `proposta` até as fases correspondentes (nenhuma é aceita sem evidência e aprovação).
 - [`specs/`](specs): entregáveis das Fases 0 e 1 (auditoria do v1, oráculo, dataset, spikes, esqueleto).
 
 ## Metodologia
