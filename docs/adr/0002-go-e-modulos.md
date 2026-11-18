@@ -1,6 +1,6 @@
 # ADR 0002: Go e estrutura de módulos
 
-- **Status:** proposta
+- **Status:** aceita (aprovada pelo usuário em 2026-11-18, com a evidência da Fase 1)
 - **Data:** 2026-11-17
 - **Origem no plano:** D1, D6 (seção 2) (`docs/plan-go.md`)
 
@@ -27,4 +27,8 @@ O spike mostrar fricção que não compense (ex.: CI e Docker com `go.work`), ca
 
 ## Evidência
 
-Pendente. Montagem do esqueleto na Fase 1 e S4.
+Fase 1 (2026-11-18, `specs/fase-1-esqueleto.md`, `specs/execucao-fase-1.log`): `go.work` com 8 módulos (`platform`, quatro serviços,
+`ms-queues`, `archtest`, `tests`) e Go 1.27.4 fixado; `make check` e o build das imagens funcionam com `go.work` (`COPY .` + `go build` no Docker);
+`archtest` (G4) provado também no caso negativo (import proibido falha o teste). Fricção observada: `./...` na raiz não atravessa módulos
+(o `Makefile` itera por módulo) e cada `go.mod` precisa de `replace` para `platform`. `testcontainers-go` ficou em módulo à parte para
+não entrar no grafo de `platform`.

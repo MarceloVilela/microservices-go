@@ -1,0 +1,31 @@
+name: ms-worker
+
+services:
+  app:
+    container_name: ms-worker
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: final
+      args:
+        PKG: ./ms-worker/cmd/ms-worker
+    environment:
+      AMQP_URL: amqp://${RABBITMQ_USER:?rode ./run.sh, que gera o .env}:${RABBITMQ_PASS:?}@ms-queues:5672/
+      HTTP_ADDR: ":8083"
+    ports:
+      - "127.0.0.1:8083:8083"
+    healthcheck:
+      test: ["CMD", "/app", "healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    networks: [ms-go-network]
+
+networks:
+  ms-go-network:
+    external: true

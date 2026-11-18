@@ -1,0 +1,132 @@
+# Fase 1: evidência de execução (2026-11-18)
+# Go: go version go1.27.4 linux/amd64
+
+## make check (build, vet, test -race, arch, lint, govulncheck)
+?   	github.com/MarceloVilela/microservices-go/platform/amqpx	[no test files]
+ok  	github.com/MarceloVilela/microservices-go/platform/config	1.021s
+ok  	github.com/MarceloVilela/microservices-go/platform/health	1.075s
+?   	github.com/MarceloVilela/microservices-go/platform/logging	[no test files]
+ok  	github.com/MarceloVilela/microservices-go/platform/service	1.066s
+ok  	github.com/MarceloVilela/microservices-go/platform/topology	1.017s
+?   	github.com/MarceloVilela/microservices-go/ms-ingest/cmd/ms-ingest	[no test files]
+?   	github.com/MarceloVilela/microservices-go/ms-worker/cmd/ms-worker	[no test files]
+?   	github.com/MarceloVilela/microservices-go/ms-notification/cmd/ms-notification	[no test files]
+?   	github.com/MarceloVilela/microservices-go/ms-api/cmd/ms-api	[no test files]
+?   	github.com/MarceloVilela/microservices-go/ms-queues/cmd/topology-init	[no test files]
+ok  	github.com/MarceloVilela/microservices-go/ms-queues/internal/initcmd	1.021s
+ok  	github.com/MarceloVilela/microservices-go/archtest	1.031s
+ok  	github.com/MarceloVilela/microservices-go/archtest	0.005s
+0 issues.
+0 issues.
+0 issues.
+0 issues.
+0 issues.
+0 issues.
+0 issues.
+0 issues.
+No vulnerabilities found.
+No vulnerabilities found.
+No vulnerabilities found.
+No vulnerabilities found.
+No vulnerabilities found.
+No vulnerabilities found.
+No vulnerabilities found.
+No vulnerabilities found.
+exit=0
+
+## make integration (testcontainers-go, RabbitMQ 4)
+ok  	github.com/MarceloVilela/microservices-go/tests	13.878s
+
+## scripts/aceite-fase-1.sh
+== 1. serviços saudáveis e prontos
+ok    ms-ingest /healthz (200)
+ok    ms-ingest /readyz (200)
+ok    ms-ingest docker health (healthy)
+ok    ms-api /healthz (200)
+ok    ms-api /readyz (200)
+ok    ms-api docker health (healthy)
+ok    ms-worker /healthz (200)
+ok    ms-worker /readyz (200)
+ok    ms-worker docker health (healthy)
+ok    ms-notification /healthz (200)
+ok    ms-notification /readyz (200)
+ok    ms-notification docker health (healthy)
+== 2. topologia vista pelo broker (criada só pelo topology-init)
+ok    exchange photos (direct, durável) (direct true)
+ok    7 filas (batch.completed photo.process photo.process.dlq photo.process.retry.2m photo.process.retry.30s photo.process.retry.5m photo.process.retry.5s)
+== 3. topologia divergente: /readyz falha e NADA é recriado
+ok    ms-api (exige a DLQ) /readyz (503)
+ok    ms-worker (exige a DLQ) /readyz (503)
+ok    ms-ingest (não exige a DLQ) /readyz (200)
+ok    ms-notification (não exige a DLQ) /readyz (200)
+ok    ms-api continua 503 na 2ª chamada (503)
+ok    DLQ continua ausente (nenhum serviço recriou) (404)
+-- recuperação: só o topology-init recria
+ok    ms-api /readyz depois do topology-init (200)
+ok    ms-worker /readyz depois do topology-init (200)
+== 4. config check e healthcheck dentro da imagem final
+ok    config check sem AMQP_URL sai 1 (1)
+ok    config check válido sai 0 (0)
+ok    nome de variável inválido sai 1 (1)
+ok    healthcheck sem servidor sai 1 (1)
+== 5. download HTTPS na base da imagem final (distroless/static:nonroot)
+ok    ok: status=200 bytes=1888 content-type=image/jpeg host-final=fastly.picsum.photos
+
+ACEITE DA FASE 1: OK
+exit=0
+
+## reprodução em container limpo (golang:1.27.4-bookworm, cópia do repo sem .git/specs/.env, make check)
+exit=0 (ver ressalva: integração e aceite precisam do Docker do host e não rodam dentro do container)
+
+## tamanhos de imagem
+ms-go-https-probe 15.1MB
+ms-api-app 18.4MB
+ms-notification-app 18.4MB
+ms-worker-app 18.4MB
+ms-ingest-app 18.4MB
+ms-queues-topology-init 16.2MB
+
+## resumo de saídas: make check=0 integration=0 aceite=0
+
+## Rodada 2 (depois do code-review high): correções dos 10 achados
+make check=0 (em 09:52)
+make integration=0
+./run.sh (rebuild das imagens)=0
+scripts/aceite-fase-1.sh=0:
+== 1. serviços saudáveis e prontos
+ok    ms-ingest /healthz (200)
+ok    ms-ingest /readyz (200)
+ok    ms-ingest docker health (healthy)
+ok    ms-api /healthz (200)
+ok    ms-api /readyz (200)
+ok    ms-api docker health (healthy)
+ok    ms-worker /healthz (200)
+ok    ms-worker /readyz (200)
+ok    ms-worker docker health (healthy)
+ok    ms-notification /healthz (200)
+ok    ms-notification /readyz (200)
+ok    ms-notification docker health (healthy)
+== 2. topologia vista pelo broker (criada só pelo topology-init)
+ok    exchange photos (direct, durável) (direct true)
+ok    7 filas (batch.completed photo.process photo.process.dlq photo.process.retry.2m photo.process.retry.30s photo.process.retry.5m photo.process.retry.5s)
+== 3. topologia divergente: /readyz falha e NADA é recriado
+ok    ms-api (exige a DLQ) /readyz (503)
+ok    ms-worker (exige a DLQ) /readyz (503)
+ok    ms-ingest (não exige a DLQ) /readyz (200)
+ok    ms-notification (não exige a DLQ) /readyz (200)
+ok    ms-api continua 503 na 2ª chamada (503)
+ok    DLQ continua ausente (nenhum serviço recriou) (404)
+-- recuperação: só o topology-init recria
+ok    ms-api /readyz depois do topology-init (200)
+ok    ms-worker /readyz depois do topology-init (200)
+== 4. config check e healthcheck dentro da imagem final
+ok    config check sem AMQP_URL sai 1 (1)
+ok    config check válido sai 0 (0)
+ok    nome de variável inválido sai 1 (1)
+ok    healthcheck sem servidor sai 1 (1)
+== 5. download HTTPS na base da imagem final (distroless/static:nonroot)
+ok    ok: status=200 bytes=1888 content-type=image/jpeg host-final=fastly.picsum.photos
+
+ACEITE DA FASE 1: OK
+make check em golang:1.27.4-bookworm limpo (govulncheck v1.10.0)=0
+binários residuais em ms-*/: nenhum

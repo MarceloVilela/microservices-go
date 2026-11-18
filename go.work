@@ -1,0 +1,12 @@
+go 1.27.4
+
+use (
+	./archtest
+	./ms-api
+	./ms-ingest
+	./ms-notification
+	./ms-queues
+	./ms-worker
+	./platform
+	./tests
+)

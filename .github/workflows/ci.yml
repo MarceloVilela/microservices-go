@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.work
+          cache: false
+      - name: Ferramentas
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+          go install golang.org/x/vuln/cmd/govulncheck@v1.10.0
+      - name: build, vet, test -race, arch, lint e govulncheck
+        run: make check
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.work
+          cache: false
+      - name: Testes de integração (testcontainers-go, RabbitMQ 4)
+        run: make integration
+
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build das imagens
+        run: make images
+      - name: Download HTTPS dentro da base da imagem final
+        run: docker run --rm ms-go-https-probe https://picsum.photos/id/1/64/64
+      - name: Aceite ponta a ponta (compose, topologia e readyz)
+        run: |
+          ./run.sh
+          scripts/aceite-fase-1.sh
