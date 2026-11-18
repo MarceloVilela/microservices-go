@@ -1,0 +1,41 @@
+### RQ7: roteiro do ms-ingest (Fase 2). Use com a pilha de pé (./run.sh).
+@host = http://localhost:8081
+
+### Lote válido (202). Repetir com a mesma Idempotency-Key devolve 200 e o mesmo batch_id.
+POST {{host}}/batches
+Content-Type: application/json
+Idempotency-Key: demo-1
+
+{"photos":[
+  {"source_url":"https://picsum.photos/id/10/1200/800"},
+  {"source_url":"https://picsum.photos/id/20/1200/800"},
+  {"source_url":"https://picsum.photos/id/30/1200/800"}
+]}
+
+### Mesma chave, corpo diferente (422 idempotency_key_reuse)
+POST {{host}}/batches
+Content-Type: application/json
+Idempotency-Key: demo-1
+
+{"photos":[{"source_url":"https://picsum.photos/id/99/1200/800"}]}
+
+### Host fora da allowlist (400 invalid_request, nada é gravado)
+POST {{host}}/batches
+Content-Type: application/json
+
+{"photos":[{"source_url":"https://example.com/foto.jpg"}]}
+
+### Lista vazia (400)
+POST {{host}}/batches
+Content-Type: application/json
+
+{"photos":[]}
+
+### Não é JSON (415)
+POST {{host}}/batches
+Content-Type: text/plain
+
+oi
+
+### Prontidão (503 com o broker ou o Postgres parados)
+GET {{host}}/readyz

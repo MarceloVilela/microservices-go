@@ -22,8 +22,8 @@
 | Fase | Nome | Tamanho | Status |
 |---|---|---|---|
 | 0 | Auditoria do v1, spec, ADRs e spikes | M | **G0 fechado em 2026-11-18**; PR #1 mergeado |
-| 1 | Esqueleto: monorepo Go, Docker, CI, lint e topologia do broker | M | **implementada em 2026-11-18, aceite verde**; PR pendente (a pedido); `specs/fase-1-esqueleto.md` |
-| 2 | `ms-ingest`: API HTTP, outbox e publicação com confirmação | M | pendente |
+| 1 | Esqueleto: monorepo Go, Docker, CI, lint e topologia do broker | M | **mergeada** (PR #2); `specs/fase-1-esqueleto.md` |
+| 2 | `ms-ingest`: API HTTP, outbox e publicação com confirmação | M | **implementada em 2026-11-18, aceite verde**; PR pendente (a pedido); `specs/fase-2-ingest-outbox.md` |
 | 3 | `ms-worker`: consumo, download, miniatura, ack manual, idempotência e fim de lote | L | pendente |
 | 4 | Resiliência: retry com backoff, DLQ, reconexão e shutdown gracioso | L | pendente |
 | 5 | `ms-notification`: evento de fim de lote e abstração `Notifier` (log; e-mail opcional) | S | pendente |
@@ -256,6 +256,7 @@ Entregáveis em `specs/`:
   5. só então **ack**.
 - Falha transitória vai para o degrau de retry; falha definitiva vai direto à DLQ **e** conta como terminada (passo 4 com `failed`).
 - Testes de unidade com fake do broker (interface no consumidor, RQ8).
+- **Pendência da Fase 2:** decidir a ordem de publicação do outbox (o `bigserial` não segue a ordem de commit; ver ADR 0013, "Achado em aberto") antes do teste de R3.
 
 **Aceite**: lote do dataset processado e miniaturas conferidas contra o esperado; **matar o worker em cada um de três pontos** (após o arquivo temporário, após o `rename`, após o commit e antes do ack) reentrega a mensagem sem duplicar resultado nem deixar miniatura truncada; um lote com uma foto inválida **termina** e emite `batch.completed` uma vez; duas fotos finalizadas ao mesmo tempo não geram dois eventos; **G1** verde nos cenários de R3 (com concorrência 1) e R2.
 

@@ -6,7 +6,7 @@ Decisões de arquitetura do projeto. Formato: Status, Contexto, Decisão, Altern
 
 | ADR `proposta` | Revisar na | Evidência esperada |
 |---|---|---|
-| 0008 HTTP (stdlib ou `chi`) | Fase 2 | middlewares (CORS, token, logging) escritos |
+| 0008 HTTP (stdlib ou `chi`) | Fase 2 | middlewares (CORS, token, logging) escritos; **evidência registrada, aguardando aprovação** |
 | 0006 Idempotência do worker | Fase 3 | testes que matam o worker nos pontos da ordem de operações |
 | 0013 Ordem FIFO | Fases 3 e 4 | cenário O2 do oráculo no Go com concorrência 1 |
 | 0014 Fim de lote | Fase 3 | duas fotos finalizadas juntas geram um só `batch.completed` |
@@ -26,7 +26,7 @@ Decisões de arquitetura do projeto. Formato: Status, Contexto, Decisão, Altern
 | [0005](0005-retry-degraus-dlq.md) | Retry por degraus (escada TTL + DLX), DLQ, Retry-After e jitter | **aceita** (2026-11-17) | S1, S2 |
 | [0006](0006-idempotencia-do-worker.md) | Idempotência do worker | proposta | pendente |
 | [0007](0007-banco-e-acesso-a-dados.md) | Banco e acesso a dados | **aceita** (2026-11-18): Postgres + `pgx`; `sqlc` adiado | S4 |
-| [0008](0008-http.md) | HTTP: mux da stdlib ou chi | proposta | pendente |
+| [0008](0008-http.md) | HTTP: mux da stdlib ou chi | proposta (evidência da Fase 2 registrada; **aguardando aprovação**) | Fase 2 |
 | [0009](0009-logging-e-observabilidade.md) | Logging e observabilidade | proposta | pendente |
 | [0010](0010-fonte-de-fotos-allowlist-ssrf.md) | Fonte de fotos, allowlist e SSRF completa | **aceita** (2026-11-18) | S3, dataset |
 | [0011](0011-imagem-docker-final.md) | Imagem Docker final, versão do Go e healthcheck | **aceita** (2026-11-18) | S5 |

@@ -32,3 +32,9 @@ Revisar o Postgres se o `LISTEN/NOTIFY` se mostrar inadequado ao SSE na Fase 6 (
 ## Evidência
 
 **S4 executado em 2026-11-17** (`specs/spikes/s4-testcontainers.md`): `FOR UPDATE SKIP LOCKED` com `pgx` e Postgres 18 dividiu 1.000 linhas entre duas instâncias do relay (580 e 420) sem perda nem duplicata e pulou as linhas travadas por outra instância. Limites: as instâncias eram goroutines do mesmo processo e a queda foi simulada com rollback. **Não verificado:** `LISTEN/NOTIFY` (fica para a Fase 6) e o `sqlc` (nenhuma comparação com `database/sql` ou `pgx` direto).
+
+## Decisão sobre o `sqlc` (Fase 2, 2026-11-18), aguardando aprovação
+
+**Não adotado nesta fase: `pgx` direto.** O SQL da Fase 2 é pequeno (inserts de lote, fotos, outbox e evento, uma consulta de idempotência, o `SELECT ... FOR UPDATE SKIP LOCKED` do relay e o `UPDATE ... = ANY($1)`), e os poucos `Scan` escritos à mão estão em 2 funções. O `sqlc` acrescentaria gerador, arquivo de esquema duplicado das migrações e um passo de CI (`git diff --exit-code`) sem reduzir código de forma relevante. **Não foi experimentado** (o critério acima pedia gerar as queries reais; a decisão se apoia no tamanho do SQL, não numa comparação medida). Reavaliar na Fase 6, quando o `ms-api` terá muitas consultas de leitura com filtros e cursor.
+
+Esquema e migrações: `platform/db/migrations/*.sql`, aplicadas por `db.Migrate` (cada migração numa transação, sob `pg_advisory_lock`). O `ms-ingest` é o dono do esquema na Fase 2.

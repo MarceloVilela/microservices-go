@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -35,6 +36,17 @@ func (v Values) String(name string) string { return v[name] }
 func (v Values) Duration(name string) time.Duration {
 	d, _ := time.ParseDuration(v[name])
 	return d
+}
+
+// ErrInvalid cria o erro de um validador; a mensagem descreve o formato esperado,
+// nunca o valor recebido.
+func ErrInvalid(expected string) error { return fmt.Errorf("esperado %s", expected) }
+
+// Int devolve o valor como inteiro; Load já validou as variáveis que usam este
+// acessor (com um validador de inteiro), então erro de parse devolve zero.
+func (v Values) Int(name string) int {
+	n, _ := strconv.Atoi(v[name])
+	return n
 }
 
 // ValidDuration valida uma duração positiva.

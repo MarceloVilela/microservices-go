@@ -7,6 +7,7 @@ package tests
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -31,6 +32,12 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	if rbCont != nil {
 		_ = testcontainers.TerminateContainer(rbCont)
+	}
+	if pgCont != nil {
+		_ = testcontainers.TerminateContainer(pgCont)
+	}
+	if binPath != "" {
+		_ = os.RemoveAll(filepath.Dir(binPath))
 	}
 	os.Exit(code)
 }

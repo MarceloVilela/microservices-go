@@ -45,3 +45,4 @@ check: build vet test arch lint vuln
 
 accept:
 	@scripts/aceite-fase-1.sh
+	@scripts/aceite-fase-2.sh
