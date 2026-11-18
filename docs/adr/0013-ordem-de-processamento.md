@@ -28,3 +28,5 @@ Se o teste do oráculo mostrar que a ordem falha mesmo com concorrência 1, corr
 ## Evidência
 
 Pendente. Cenário de R3 em `specs/oraculo-mensageria.md` (Fases 3 e 4).
+
+**Achado em aberto, vindo do code-review `high` da Fase 2 (2026-11-18), a decidir antes do teste de R3 na Fase 3:** o relay do outbox lê `ORDER BY id ... FOR UPDATE SKIP LOCKED`, e um `bigserial` não segue a ordem de commit (a tx com o id 10 pode comitar depois da do 11). Com duas instâncias do `ms-ingest`, `SKIP LOCKED` ainda intercala os relays. Resultado: `photo.process` pode receber mensagens fora da ordem de inserção, então o FIFO de R3 não vale nem com `WORKER_CONCURRENCY=1` e `prefetch=1`. Opções a avaliar: relay único com ordem por id (advisory lock, perde escala), aceitar a divergência e restringir o FIFO a "ordem de chegada ao broker", ou ordenar por um critério de commit. Ainda não medido nem decidido.

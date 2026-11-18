@@ -24,12 +24,21 @@ retry_code() { # url esperado: tenta por até 20 s (readyz abre uma conexão por
   printf '%s' "$got"
 }
 
+retry_health() { # container: espera healthy por até 60 s (healthcheck tem interval 10 s)
+  local got=""
+  for _ in $(seq 60); do
+    got="$(docker inspect -f '{{.State.Health.Status}}' "$1" 2>/dev/null || true)"
+    [ "$got" = "healthy" ] && break; sleep 1
+  done
+  printf '%s' "$got"
+}
+
 echo "== 1. serviços saudáveis e prontos"
 for s in ms-ingest:8081 ms-api:8082 ms-worker:8083 ms-notification:8084; do
   n=${s%%:*}; p=${s##*:}
   expect "$n /healthz" 200 "$(code "localhost:$p/healthz")"
   expect "$n /readyz" 200 "$(retry_code "localhost:$p/readyz" 200)"
-  expect "$n docker health" healthy "$(docker inspect -f '{{.State.Health.Status}}' "$n")"
+  expect "$n docker health" healthy "$(retry_health "$n")"
 done
 
 echo "== 2. topologia vista pelo broker (criada só pelo topology-init)"
@@ -53,9 +62,9 @@ expect "ms-worker /readyz depois do topology-init" 200 "$(retry_code localhost:8
 
 echo "== 4. config check e healthcheck dentro da imagem final"
 set +e
-docker run --rm ms-ingest-app config check >/dev/null 2>&1; expect "config check sem AMQP_URL sai 1" 1 "$?"
-docker run --rm -e AMQP_URL=amqp://u:p@h/ ms-ingest-app config check >/dev/null 2>&1; expect "config check válido sai 0" 0 "$?"
-docker run --rm -e 'http-addr=:1' -e AMQP_URL=amqp://u:p@h/ ms-ingest-app config check >/dev/null 2>&1; expect "nome de variável inválido sai 1" 1 "$?"
+docker run --rm ms-worker-app config check >/dev/null 2>&1; expect "config check sem AMQP_URL sai 1" 1 "$?"
+docker run --rm -e AMQP_URL=amqp://u:p@h/ ms-worker-app config check >/dev/null 2>&1; expect "config check válido sai 0" 0 "$?"
+docker run --rm -e 'http-addr=:1' -e AMQP_URL=amqp://u:p@h/ ms-worker-app config check >/dev/null 2>&1; expect "nome de variável inválido sai 1" 1 "$?"
 docker run --rm ms-ingest-app healthcheck >/dev/null 2>&1; expect "healthcheck sem servidor sai 1" 1 "$?"
 set -e
 

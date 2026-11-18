@@ -26,20 +26,37 @@ type Spec struct {
 	DefaultAddr string
 	// Require é o que o serviço exige do broker (verificação passiva no /readyz).
 	Require amqpx.Requirement
+	// ExtraVars são as variáveis do serviço além das comuns (validadas no boot e no config check).
+	ExtraVars []config.Var
+	// Setup monta as dependências do serviço (banco, rotas, tarefas). Opcional.
+	Setup func(ctx context.Context, vals config.Values, log *slog.Logger) (*Runtime, error)
 	// Verifier substitui a verificação padrão (usado em testes).
 	Verifier func(ctx context.Context, amqpURL string) error
 }
 
+// Runtime é o que o Setup devolve.
+type Runtime struct {
+	// Mount registra as rotas do serviço no mux (além de /healthz e /readyz).
+	Mount func(mux *http.ServeMux)
+	// Ready é uma checagem de prontidão extra (ex.: ping no banco), somada à do broker.
+	Ready health.Check
+	// Background são tarefas de longa duração (ex.: relay). Rodam até ctx terminar;
+	// uma que devolve erro diferente de context.Canceled derruba o serviço.
+	Background []func(ctx context.Context) error
+	// Close libera recursos depois do shutdown do servidor e das tarefas.
+	Close func()
+}
+
 // Vars é a lista completa de variáveis de ambiente de um serviço.
-func Vars(defaultAddr string) []config.Var {
-	return []config.Var{
+func Vars(spec Spec) []config.Var {
+	return append([]config.Var{
 		{Name: "LOG_LEVEL", Default: "info", Validate: config.OneOf("debug", "info", "warn", "error")},
-		{Name: "HTTP_ADDR", Default: defaultAddr, Validate: validAddr},
+		{Name: "HTTP_ADDR", Default: spec.DefaultAddr, Validate: validAddr},
 		{Name: "AMQP_URL", Required: true, Secret: true, Validate: amqpx.ValidURL},
 		{Name: "READY_TIMEOUT", Default: "2s", Validate: config.ValidDuration},
 		// por quanto tempo o /readyz reaproveita o último resultado (evita uma conexão AMQP por probe)
 		{Name: "READY_CACHE_TTL", Default: "2s", Validate: config.ValidDuration},
-	}
+	}, spec.ExtraVars...)
 }
 
 // validAddr aceita host:porta com porta numérica de 0 a 65535 (host pode ser vazio).
@@ -107,7 +124,7 @@ func Run(ctx context.Context, spec Spec, args []string, environ []string, stdout
 }
 
 func configCheck(spec Spec, environ []string, stdout, stderr io.Writer) int {
-	vars := Vars(spec.DefaultAddr)
+	vars := Vars(spec)
 	if _, err := config.Load(environ, vars); err != nil {
 		say(stderr, "configuração inválida:\n%v\n", err)
 		return 1
@@ -152,13 +169,29 @@ func healthcheck(ctx context.Context, spec Spec, environ []string, stderr io.Wri
 }
 
 func serve(ctx context.Context, spec Spec, environ []string, stderr io.Writer) int {
-	vals, err := config.Load(environ, Vars(spec.DefaultAddr))
+	vals, err := config.Load(environ, Vars(spec))
 	if err != nil {
 		say(stderr, "configuração inválida:\n%v\n", err)
 		return 1
 	}
 	log := logging.New(stderr, spec.Name, vals.String("LOG_LEVEL"))
-	log.Info("configuração carregada", "variaveis", config.Names(Vars(spec.DefaultAddr)))
+	log.Info("configuração carregada", "variaveis", config.Names(Vars(spec)))
+
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var rt Runtime
+	if spec.Setup != nil {
+		r, err := spec.Setup(runCtx, vals, log)
+		if err != nil {
+			log.Error("montar o serviço", "erro", err)
+			return 1
+		}
+		rt = *r
+	}
+	if rt.Close != nil {
+		defer rt.Close()
+	}
 
 	amqpURL := vals.String("AMQP_URL")
 	verify := spec.Verifier
@@ -166,35 +199,63 @@ func serve(ctx context.Context, spec Spec, environ []string, stderr io.Writer) i
 		verify = func(ctx context.Context, url string) error { return amqpx.Verify(ctx, url, spec.Require) }
 	}
 	check := func(ctx context.Context) error {
-		err := verify(ctx, amqpURL)
-		if err != nil {
+		var errs []error
+		if err := verify(ctx, amqpURL); err != nil {
 			log.Warn("readyz: topologia ou broker indisponível", "erro", err)
+			errs = append(errs, err)
 		}
-		return err
+		if rt.Ready != nil {
+			if err := rt.Ready(ctx); err != nil {
+				log.Warn("readyz: dependência indisponível", "erro", err)
+				errs = append(errs, err)
+			}
+		}
+		return errors.Join(errs...)
 	}
 
+	mux := health.Handler(cached(check, vals.Duration("READY_CACHE_TTL")), vals.Duration("READY_TIMEOUT"))
+	if rt.Mount != nil {
+		rt.Mount(mux)
+	}
 	srv := &http.Server{
 		Addr:              vals.String("HTTP_ADDR"),
-		Handler:           health.Handler(cached(check, vals.Duration("READY_CACHE_TTL")), vals.Duration("READY_TIMEOUT")),
+		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
-		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
+		// o corpo do POST /batches tem no máximo 1 MiB; clientes lentos não podem prender conexões
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
+		ErrorLog:     slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
-	errc := make(chan error, 1)
+	errc := make(chan error, 1+len(rt.Background))
 	go func() { errc <- srv.ListenAndServe() }()
+	var bg sync.WaitGroup
+	for _, task := range rt.Background {
+		bg.Add(1)
+		go func() {
+			defer bg.Done()
+			if err := task(runCtx); err != nil && !errors.Is(err, context.Canceled) {
+				errc <- err
+			}
+		}()
+	}
 	log.Info("servindo", "addr", srv.Addr)
 
+	code := 0
 	select {
 	case err := <-errc:
-		log.Error("servidor parou", "erro", err)
-		return 1
+		log.Error("serviço parou", "erro", err)
+		code = 1
 	case <-ctx.Done():
 	}
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	cancel() // para as tarefas em segundo plano
+	shutdownCtx, stopShutdown := context.WithTimeout(context.Background(), 10*time.Second)
+	defer stopShutdown()
 	if err := srv.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Error("shutdown", "erro", err)
-		return 1
+		code = 1
 	}
+	bg.Wait()
 	log.Info("encerrado")
-	return 0
+	return code
 }

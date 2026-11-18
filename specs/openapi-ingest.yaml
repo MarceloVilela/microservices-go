@@ -1,0 +1,68 @@
+openapi: 3.0.3
+info:
+  title: ms-ingest
+  version: "1"
+  description: Contrato curto do ms-ingest (Fase 2). Erros em application/problem+json com `code` estável.
+paths:
+  /batches:
+    post:
+      summary: Cria um lote de fotos e agenda o processamento (outbox)
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9._-]+$' }
+        - name: Authorization
+          in: header
+          required: false
+          description: "`Bearer <DEMO_TOKEN>`; exigido só se o serviço tiver DEMO_TOKEN configurado"
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [photos]
+              properties:
+                photos:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [source_url]
+                    properties:
+                      source_url:
+                        type: string
+                        maxLength: 2048
+                        description: https, porta 443, sem credencial, host em ALLOWED_HOSTS (padrão picsum.photos e fastly.picsum.photos)
+      responses:
+        "202": { description: Lote aceito, content: { application/json: { schema: { $ref: '#/components/schemas/Accepted' } } } }
+        "200":
+          description: Idempotency-Key repetida com o mesmo corpo; devolve o lote original
+          headers: { Idempotent-Replay: { schema: { type: string, enum: ["true"] } } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/Accepted' } } }
+        "400": { description: "code `invalid_request` (JSON malformado, lista vazia ou grande, URL inválida, host fora da allowlist, chave inválida)" }
+        "401": { description: "code `unauthorized`" }
+        "413": { description: "code `body_too_large` (corpo acima de 1 MiB)" }
+        "415": { description: "code `unsupported_media_type`" }
+        "422": { description: "code `idempotency_key_reuse` (mesma chave, corpo diferente)" }
+        "500": { description: "code `internal_error`" }
+  /healthz:
+    get: { summary: Liveness, responses: { "200": { description: ok } } }
+  /readyz:
+    get:
+      summary: Readiness (topologia do broker e Postgres)
+      responses: { "200": { description: ok }, "503": { description: broker ou banco indisponível } }
+components:
+  schemas:
+    Accepted:
+      type: object
+      required: [batch_id, total, status]
+      properties:
+        batch_id: { type: string, format: uuid }
+        total: { type: integer }
+        status: { type: string, enum: [accepted] }

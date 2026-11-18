@@ -1,0 +1,29 @@
+name: ms-db
+
+services:
+  ms-db:
+    container_name: ms-db
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${POSTGRES_PASS:?rode ./run.sh, que gera o .env}
+      POSTGRES_DB: app
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ms-db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+    networks: [ms-go-network]
+
+volumes:
+  ms-db-data:
+
+networks:
+  ms-go-network:
+    external: true
