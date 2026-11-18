@@ -624,3 +624,53 @@ func TestIngestCORSETokenNoPreflight(t *testing.T) {
 		t.Errorf("POST com token = %d %v", resp.StatusCode, resp.Header)
 	}
 }
+
+// P2 (Fase 3): uma linha que o broker rejeita (chave sem fila) não trava o outbox: depois de
+// RELAY_MAX_ATTEMPTS rejeições ela entra em quarentena e as demais seguem.
+func TestIngestLinhaVenenosaVaiParaQuarentenaESegue(t *testing.T) {
+	url, dbURL := setupBroker(t), freshDB(t)
+	in := startIngest(t, url, dbURL, "RELAY_MAX_ATTEMPTS=3")
+	p := pool(t, dbURL)
+	ctx := context.Background()
+
+	// a venenosa tem o menor id: antes da correção o relay parava nela para sempre
+	if _, err := p.Exec(ctx, `INSERT INTO outbox (routing_key, payload) VALUES ('sem-fila', '{"message_id":"ruim"}')`); err != nil {
+		t.Fatal(err)
+	}
+	// a rejeição só conta quando o mesmo ciclo publica outra linha (senão a causa provável é a
+	// topologia, não a linha): uma linha boa por ciclo leva a ruim ao limite de 3
+	for _, id := range []string{"boa-1", "boa-2"} {
+		if _, err := p.Exec(ctx, `INSERT INTO outbox (routing_key, payload) VALUES ('process', jsonb_build_object('v', 1, 'message_id', $1::text))`, id); err != nil {
+			t.Fatal(err)
+		}
+		eventually(t, 15*time.Second, id+" publicada", func() bool {
+			return count(t, p, `SELECT count(*) FROM outbox WHERE payload->>'message_id' = $1 AND published_at IS NOT NULL`, id) == 1
+		})
+	}
+	if _, err := p.Exec(ctx, `INSERT INTO outbox (routing_key, payload) VALUES ('process', '{"v":1,"message_id":"boa-2b"}')`); err != nil {
+		t.Fatal(err)
+	}
+
+	eventually(t, 20*time.Second, "linha ruim em quarentena", func() bool {
+		return count(t, p, `SELECT count(*) FROM outbox WHERE payload->>'message_id' = 'ruim' AND parked_at IS NOT NULL AND attempts = 3 AND last_error <> ''`) == 1
+	})
+	if n := count(t, p, `SELECT count(*) FROM outbox WHERE payload->>'message_id' LIKE 'boa-%' AND published_at IS NOT NULL`); n != 3 {
+		t.Errorf("boas publicadas = %d, esperado 3", n)
+	}
+	if n := count(t, p, `SELECT count(*) FROM outbox WHERE payload->>'message_id' = 'ruim' AND published_at IS NOT NULL`); n != 0 {
+		t.Error("a linha ruim não pode constar como publicada")
+	}
+	if n := queueMessages(t, url, topology.PhotoProcess.Name); n != 3 {
+		t.Errorf("photo.process = %d, esperado 3", n)
+	}
+	// o relay segue vivo: uma linha nova depois da quarentena é publicada, e o /readyz não depende da linha ruim
+	if _, err := p.Exec(ctx, `INSERT INTO outbox (routing_key, payload) VALUES ('process', '{"v":1,"message_id":"boa-3"}')`); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, 15*time.Second, "linha posterior publicada", func() bool {
+		return count(t, p, `SELECT count(*) FROM outbox WHERE payload->>'message_id' = 'boa-3' AND published_at IS NOT NULL`) == 1
+	})
+	if in.status("/readyz") != 200 {
+		t.Error("/readyz deveria seguir 200")
+	}
+}

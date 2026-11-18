@@ -14,6 +14,7 @@ build:
 vet:
 	@for m in $(MODULES); do (cd $$m && $(GO) vet ./...) || exit 1; done
 	@(cd tests && $(GO) vet -tags integration ./...)
+	@(cd ms-worker && $(GO) vet -tags faultinject ./...)
 
 test:
 	@for m in $(TEST_MODULES); do (cd $$m && $(GO) test -race -count=1 ./...) || exit 1; done
@@ -22,7 +23,7 @@ arch:
 	@cd archtest && $(GO) test -count=1 ./...
 
 lint:
-	@for m in $(MODULES) tests; do (cd $$m && golangci-lint run --build-tags integration ./...) || exit 1; done
+	@for m in $(MODULES) tests; do (cd $$m && golangci-lint run --build-tags integration,faultinject ./...) || exit 1; done
 
 vuln:
 	@for m in $(MODULES) tests; do (cd $$m && govulncheck ./...) || exit 1; done
@@ -46,3 +47,4 @@ check: build vet test arch lint vuln
 accept:
 	@scripts/aceite-fase-1.sh
 	@scripts/aceite-fase-2.sh
+	@scripts/aceite-fase-3.sh

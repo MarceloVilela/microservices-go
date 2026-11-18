@@ -13,7 +13,6 @@ import (
 	"github.com/MarceloVilela/microservices-go/ms-ingest/internal/app"
 	"github.com/MarceloVilela/microservices-go/ms-ingest/internal/domain"
 	"github.com/MarceloVilela/microservices-go/platform/messages"
-	"github.com/MarceloVilela/microservices-go/platform/topology"
 )
 
 // Store implementa app.Store.
@@ -54,7 +53,7 @@ func (s Store) CreateBatch(ctx context.Context, b app.NewBatch) (app.Stored, err
 		if err != nil {
 			return app.Stored{}, fmt.Errorf("serializar mensagem: %w", err)
 		}
-		batch.Queue(`INSERT INTO outbox (topic, routing_key, payload) VALUES ($1, $2, $3)`, topology.Exchange, ProcessKey, payload)
+		batch.Queue(`INSERT INTO outbox (routing_key, payload) VALUES ($1, $2)`, ProcessKey, payload)
 	}
 	eventPayload, _ := json.Marshal(map[string]int{"total": len(b.Photos)})
 	batch.Queue(`INSERT INTO events (type, batch_id, payload) VALUES ('batch.created', $1, $2)`, b.ID, eventPayload)

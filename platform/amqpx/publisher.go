@@ -29,6 +29,11 @@ var ErrUnroutable = errors.New("mensagem sem rota (nenhuma fila ligada à chave)
 // Publish envia body (persistente, JSON) com a chave dada e só retorna nil
 // depois do ack do broker. messageID vai no cabeçalho MessageId do AMQP.
 func (p *Publisher) Publish(ctx context.Context, routingKey, messageID string, body []byte) error {
+	return p.PublishWithHeaders(ctx, routingKey, messageID, nil, body)
+}
+
+// PublishWithHeaders é Publish com cabeçalhos AMQP adicionais (retry e DLQ do worker).
+func (p *Publisher) PublishWithHeaders(ctx context.Context, routingKey, messageID string, headers amqp.Table, body []byte) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if err := p.connect(ctx); err != nil {
@@ -39,6 +44,7 @@ func (p *Publisher) Publish(ctx context.Context, routingKey, messageID string, b
 		ContentType:  "application/json",
 		DeliveryMode: amqp.Persistent,
 		MessageId:    messageID,
+		Headers:      headers,
 		Body:         body,
 	})
 	if err != nil {

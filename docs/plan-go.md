@@ -23,8 +23,8 @@
 |---|---|---|---|
 | 0 | Auditoria do v1, spec, ADRs e spikes | M | **G0 fechado em 2026-11-18**; PR #1 mergeado |
 | 1 | Esqueleto: monorepo Go, Docker, CI, lint e topologia do broker | M | **mergeada** (PR #2); `specs/fase-1-esqueleto.md` |
-| 2 | `ms-ingest`: API HTTP, outbox e publicação com confirmação | M | **implementada em 2026-11-18, aceite verde**; PR pendente (a pedido); `specs/fase-2-ingest-outbox.md` |
-| 3 | `ms-worker`: consumo, download, miniatura, ack manual, idempotência e fim de lote | L | pendente |
+| 2 | `ms-ingest`: API HTTP, outbox e publicação com confirmação | M | **mergeada** (PR #3); `specs/fase-2-ingest-outbox.md` |
+| 3 | `ms-worker`: consumo, download, miniatura, ack manual, idempotência e fim de lote | L | **implementada em 2026-11-18, aceite verde**; PR pendente (a pedido); `specs/fase-3-worker.md` |
 | 4 | Resiliência: retry com backoff, DLQ, reconexão e shutdown gracioso | L | pendente |
 | 5 | `ms-notification`: evento de fim de lote e abstração `Notifier` (log; e-mail opcional) | S | pendente |
 | 6 | `ms-api`: leitura, stream de eventos (SSE) e reprocessamento da DLQ | M | pendente |
@@ -174,7 +174,7 @@ ms-queues = RabbitMQ 4 management (rede externa compartilhada, como no v1)
 - **Topologia como código, com dono único**: um **comando `topology-init`** (uma execução, no boot do `ms-queues`) declara exchange, filas, degraus de retry, DLQ e `batch.completed`. Os demais serviços só **verificam** a topologia (`QueueDeclarePassive`) e falham o `/readyz` se ela não bater. Isso evita `PRECONDITION_FAILED` por argumentos divergentes entre versões de imagem.
 - **Código compartilhado**: só o módulo `platform` (config, `slog`, conexão AMQP com reconexão, tipos das mensagens). Regra e ADR 0015; serviços não importam uns aos outros (G4).
 - **Mensagem**: JSON versionado (`{"v":1,"batch_id":...,"photo_id":...,"source_url":...}`), com `message_id` e `correlation_id`.
-- **Outbox**: tabela `outbox(id, topic, payload, created_at, published_at)`; o relay seleciona com `FOR UPDATE SKIP LOCKED`, publica com confirm e só então marca `published_at`. Publicação *at-least-once* (pode duplicar após falha entre confirm e marca; o worker é idempotente, N2).
+- **Outbox**: tabela `outbox(id, routing_key, payload, created_at, published_at, attempts, last_error, parked_at)`; o relay seleciona com `FOR UPDATE SKIP LOCKED`, publica com confirm e só então marca `published_at`. Publicação *at-least-once* (pode duplicar após falha entre confirm e marca; o worker é idempotente, N2).
 - **Log de eventos (fonte do SSE)**: tabela `events(seq bigserial, type, batch_id, photo_id, payload, created_at)`, escrita **na mesma transação** de cada mudança de estado (worker, retry da DLQ, criação de lote). O `ms-api` acorda por `LISTEN/NOTIFY` e lê `seq > Last-Event-ID`; o `seq` é o `id` do evento SSE, então reconectar não perde nem repete evento. Retenção limitada (ex.: últimas 24 h ou N linhas), configurável. Sem isso o `Last-Event-ID` não teria o que reler.
 - **Armazenamento**: metadados no Postgres; miniatura em volume local (`/data/thumbs`), servida pelo `ms-api` (`GET /photos/{id}/thumb`). MinIO fica como alternativa na ADR 0017.
 - **Miniatura**: `disintegration/imaging` ou `image/draw` da stdlib *(hipótese; spike S3 decide)*.
@@ -256,13 +256,14 @@ Entregáveis em `specs/`:
   5. só então **ack**.
 - Falha transitória vai para o degrau de retry; falha definitiva vai direto à DLQ **e** conta como terminada (passo 4 com `failed`).
 - Testes de unidade com fake do broker (interface no consumidor, RQ8).
-- **Pendência da Fase 2:** decidir a ordem de publicação do outbox (o `bigserial` não segue a ordem de commit; ver ADR 0013, "Achado em aberto") antes do teste de R3.
+- **Pendências da Fase 2, resolvidas na Fase 3 (2026-11-18):** ordem do outbox (FIFO restrito à ordem de chegada ao broker, ADR 0013), quarentena de linha venenosa no relay e identidade da mensagem (`message_id`; coluna `topic` removida), ver `specs/fase-3-worker.md`.
 
 **Aceite**: lote do dataset processado e miniaturas conferidas contra o esperado; **matar o worker em cada um de três pontos** (após o arquivo temporário, após o `rename`, após o commit e antes do ack) reentrega a mensagem sem duplicar resultado nem deixar miniatura truncada; um lote com uma foto inválida **termina** e emite `batch.completed` uma vez; duas fotos finalizadas ao mesmo tempo não geram dois eventos; **G1** verde nos cenários de R3 (com concorrência 1) e R2.
 
 ### Fase 4: Resiliência
 
 - Retry por degraus, falha definitiva direto à DLQ, DLQ com inspeção documentada.
+- **Herdado da Fase 3 (code-review):** limitar o `Requeue` de erro de banco persistente (contador de entregas e decisão de DLQ); decidir a ordem DLQ × transação antes da Fase 6 (ver `specs/fase-3-worker.md`).
 - Reconexão do worker, do ingest e do relay com backoff; shutdown gracioso (N3).
 - Cenários do oráculo: consumidor parado (R5 do v1) **e** broker reiniciado (mais forte que o v1).
 

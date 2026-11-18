@@ -1,0 +1,163 @@
+# Execução da Fase 3 (após o code-review high), 2026-11-18 13:45 -03
+
+$ make check
+exit=0
+ok  	github.com/MarceloVilela/microservices-go/platform/amqpx	1.631s
+ok  	github.com/MarceloVilela/microservices-go/platform/config	1.024s
+?   	github.com/MarceloVilela/microservices-go/platform/db	[no test files]
+ok  	github.com/MarceloVilela/microservices-go/platform/health	1.078s
+ok  	github.com/MarceloVilela/microservices-go/platform/httpx	1.043s
+?   	github.com/MarceloVilela/microservices-go/platform/logging	[no test files]
+ok  	github.com/MarceloVilela/microservices-go/platform/messages	1.030s
+ok  	github.com/MarceloVilela/microservices-go/platform/outbox	1.104s
+ok  	github.com/MarceloVilela/microservices-go/platform/service	1.129s
+ok  	github.com/MarceloVilela/microservices-go/platform/topology	1.017s
+?   	github.com/MarceloVilela/microservices-go/ms-ingest/cmd/ms-ingest	[no test files]
+ok  	github.com/MarceloVilela/microservices-go/ms-ingest/internal/adapters/httpapi	1.043s
+?   	github.com/MarceloVilela/microservices-go/ms-ingest/internal/adapters/postgres	[no test files]
+ok  	github.com/MarceloVilela/microservices-go/ms-ingest/internal/app	1.016s
+ok  	github.com/MarceloVilela/microservices-go/ms-ingest/internal/domain	1.016s
+?   	github.com/MarceloVilela/microservices-go/ms-worker/cmd/ms-worker	[no test files]
+?   	github.com/MarceloVilela/microservices-go/ms-worker/internal/adapters/consumer	[no test files]
+ok  	github.com/MarceloVilela/microservices-go/ms-worker/internal/adapters/filestore	1.516s
+ok  	github.com/MarceloVilela/microservices-go/ms-worker/internal/adapters/httpfetch	1.318s
+?   	github.com/MarceloVilela/microservices-go/ms-worker/internal/adapters/postgres	[no test files]
+ok  	github.com/MarceloVilela/microservices-go/ms-worker/internal/adapters/thumb	4.974s
+ok  	github.com/MarceloVilela/microservices-go/ms-worker/internal/app	1.022s
+?   	github.com/MarceloVilela/microservices-go/ms-worker/internal/domain	[no test files]
+?   	github.com/MarceloVilela/microservices-go/ms-worker/internal/fault	[no test files]
+?   	github.com/MarceloVilela/microservices-go/ms-notification/cmd/ms-notification	[no test files]
+?   	github.com/MarceloVilela/microservices-go/ms-api/cmd/ms-api	[no test files]
+?   	github.com/MarceloVilela/microservices-go/ms-queues/cmd/topology-init	[no test files]
+ok  	github.com/MarceloVilela/microservices-go/ms-queues/internal/initcmd	1.017s
+ok  	github.com/MarceloVilela/microservices-go/archtest	0.019s
+0 issues.
+0 issues.
+0 issues.
+0 issues.
+0 issues.
+0 issues.
+0 issues.
+0 issues.
+No vulnerabilities found.
+No vulnerabilities found.
+No vulnerabilities found.
+No vulnerabilities found.
+No vulnerabilities found.
+No vulnerabilities found.
+No vulnerabilities found.
+No vulnerabilities found.
+
+$ make integration
+exit=0
+ok  	github.com/MarceloVilela/microservices-go/tests	74.051s
+?   	github.com/MarceloVilela/microservices-go/tests/cmd/httpsprobe	[no test files]
+
+$ (make images && ./run.sh)
+exit=0
+
+$ make accept
+exit=0
+== 1. serviços saudáveis e prontos
+ok    ms-ingest /healthz (200)
+ok    ms-ingest /readyz (200)
+ok    ms-ingest docker health (healthy)
+ok    ms-api /healthz (200)
+ok    ms-api /readyz (200)
+ok    ms-api docker health (healthy)
+ok    ms-worker /healthz (200)
+ok    ms-worker /readyz (200)
+ok    ms-worker docker health (healthy)
+ok    ms-notification /healthz (200)
+ok    ms-notification /readyz (200)
+ok    ms-notification docker health (healthy)
+== 2. topologia vista pelo broker (criada só pelo topology-init)
+ok    exchange photos (direct, durável) (direct true)
+ok    7 filas (batch.completed photo.process photo.process.dlq photo.process.retry.2m photo.process.retry.30s photo.process.retry.5m photo.process.retry.5s)
+== 3. topologia divergente: /readyz falha e NADA é recriado
+ok    ms-api (exige a DLQ) /readyz (503)
+ok    ms-worker (exige a DLQ) /readyz (503)
+ok    ms-ingest (não exige a DLQ) /readyz (200)
+ok    ms-notification (não exige a DLQ) /readyz (200)
+ok    ms-api continua 503 na 2ª chamada (503)
+ok    DLQ continua ausente (nenhum serviço recriou) (404)
+-- recuperação: só o topology-init recria
+ok    ms-api /readyz depois do topology-init (200)
+ok    ms-worker /readyz depois do topology-init (200)
+== 4. config check e healthcheck dentro da imagem final
+ok    config check sem AMQP_URL sai 1 (1)
+ok    config check válido sai 0 (0)
+ok    nome de variável inválido sai 1 (1)
+ok    healthcheck sem servidor sai 1 (1)
+== 5. download HTTPS na base da imagem final (distroless/static:nonroot)
+ok    ok: status=200 bytes=1888 content-type=image/jpeg host-final=fastly.picsum.photos
+
+ACEITE DA FASE 1: OK
+== 1. lote válido: 202, fotos e outbox na mesma transação, fila com N mensagens
+ok    ms-ingest /readyz (200)
+ok    POST /batches (202)
+ok    fotos do lote (3)
+ok    evento batch.created (1)
+ok    outbox sem pendentes (0)
+ok    fila photo.process (Ready) cresceu 3 (3)
+== 2. Idempotency-Key repetida devolve o mesmo lote
+ok    repetição (200)
+ok    mesmo batch_id (f245deb9-3ca9-4da7-9c59-41f7ac391ffd)
+ok    mesma chave, outro corpo (422)
+ok    lotes com essa chave (1)
+== 3. corpo inválido dá 400 e não grava nada
+ok    host fora da allowlist (400)
+ok    lista vazia (400)
+ok    JSON quebrado (400)
+ok    lotes depois dos 400 (7)
+== 4. broker parado: POST ainda dá 202, outbox acumula, /readyz falha; ao voltar, publica tudo
+ok    ms-ingest /readyz com broker parado (503)
+ok    POST com broker parado (202)
+ok    pendentes no outbox (5)
+ok    outbox sem pendentes depois que o broker voltou (0)
+ok    fila photo.process recebeu as 5 do lote (8)
+ok    ms-ingest /readyz depois que o broker voltou (200)
+== 5. config check do ms-ingest (DATABASE_URL obrigatória; nenhum valor é impresso)
+ok    sem DATABASE_URL sai 1 (1)
+ok    com AMQP_URL e DATABASE_URL sai 0 (0)
+ok    config check não imprime segredos
+
+ACEITE DA FASE 2: OK
+== 1. worker pronto (broker, Postgres, esquema e diretório de miniaturas)
+ok    ms-worker /readyz (200)
+ok    ms-ingest /readyz (200)
+ok    photo.process vazia (0)
+== 2. lote do dataset: 3 fotos válidas + 1 inexistente (404) termina e emite batch.completed uma vez
+ok    POST /batches (202)
+ok    lote terminado (completed_at) (1)
+ok    fotos done (3)
+ok    fotos failed (1)
+ok    causa da falha (HTTP 404)
+ok    completed_count (4)
+ok    miniatura 02636792-f4fc-4288-9a4f-152572101aae (200x133)
+ok    miniatura 81911ecf-d4fb-40be-8fb3-43dcdad87674 (200x133)
+ok    miniatura ff4da146-0c9f-433e-a180-abb01d445ede (200x133)
+ok    batch.completed no outbox (uma vez) (1)
+ok    batch.completed publicado na fila (Ready, ainda sem consumidor) (9)
+ok    falha definitiva foi à DLQ (1)
+ok    eventos photo.done (3)
+ok    eventos photo.failed (1)
+ok    eventos batch.completed (1)
+== 3. O3 (consumidor parado): mensagens ficam Ready; ao voltar o worker, o lote termina
+ok    POST com o worker parado (202)
+ok    photo.process com 2 Ready (worker parado) (2)
+ok    lote ainda aberto (0)
+ok    lote terminado depois que o worker voltou (1)
+ok    fotos done (2)
+ok    photo.process vazia (0)
+== 4. config check do ms-worker (DATABASE_URL obrigatória; nenhum valor é impresso)
+ok    sem DATABASE_URL sai 1 (1)
+ok    com AMQP_URL e DATABASE_URL sai 0 (0)
+ok    config check não imprime segredos
+ok    WORKER_CONCURRENCY=0 sai 1 (1)
+
+ACEITE DA FASE 3: OK
+
+# Teste de mutação (manual, rodada anterior): removida a guarda "AND status = 'pending'" do UPDATE da foto em
+# ms-worker/internal/adapters/postgres/store.go. Resultado: TestWorkerReentregaRepetidaTemUmSoEfeito FALHOU
+# (completed_count = 4, esperado 2; photo.done = 4 para a mesma foto). Guarda restaurada; suíte volta a passar.

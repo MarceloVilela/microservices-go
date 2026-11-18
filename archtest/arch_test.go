@@ -147,3 +147,40 @@ func TestSoTopologyInitDeclara(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A build tag faultinject (kill injetável e fetch em loopback, só para teste) nunca pode
+// chegar à imagem final nem ao compose: nada de produção a menciona.
+func TestFaultinjectNaoVaiParaImagemNemCompose(t *testing.T) {
+	var files []string
+	err := filepath.WalkDir(filepath.Join(".."), func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		switch name := d.Name(); {
+		case name == "Dockerfile", name == "run.sh", strings.HasPrefix(name, "docker-compose"):
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("nenhum Dockerfile/compose encontrado: o teste não está olhando o repositório")
+	}
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(b), "faultinject") || strings.Contains(string(b), "WORKER_TEST_") {
+			t.Errorf("%s menciona faultinject/WORKER_TEST_: não pode ir para a imagem", f)
+		}
+	}
+}

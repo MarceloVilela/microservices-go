@@ -12,6 +12,11 @@ ARG PKG
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/app ${PKG}
 
+# Diretório das miniaturas, de dono nonroot (uid 65532): o volume nomeado herda esse dono na 1ª montagem
+# e o worker roda com read_only (distroless não tem shell para fazer mkdir/chown depois).
+FROM src AS thumbs-dir
+RUN mkdir -p /out/thumbs && chown 65532:65532 /out/thumbs
+
 FROM src AS build-probe
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/httpsprobe ./tests/cmd/httpsprobe
@@ -19,6 +24,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 # Serviço com HTTP: o HEALTHCHECK usa o subcomando do próprio binário (sem curl nem shell).
 FROM gcr.io/distroless/static:nonroot AS final
 COPY --from=build /out/app /app
+COPY --from=thumbs-dir --chown=65532:65532 /out/thumbs /data/thumbs
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 CMD ["/app", "healthcheck"]
 ENTRYPOINT ["/app"]
 

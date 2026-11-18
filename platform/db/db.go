@@ -124,3 +124,29 @@ func applyOne(ctx context.Context, conn *pgxpool.Conn, m migration) error {
 	}
 	return tx.Commit(ctx)
 }
+
+// ExpectedVersion é a maior versão de migração embutida neste binário.
+func ExpectedVersion() (int, error) {
+	migs, err := load()
+	if err != nil || len(migs) == 0 {
+		return 0, fmt.Errorf("migrações embutidas: %w", err)
+	}
+	return migs[len(migs)-1].version, nil
+}
+
+// Verify confere que o esquema aplicado tem ao menos a versão esperada por este binário,
+// sem alterar nada. Serviços que não são donos do esquema (worker, api) usam isto em vez de Migrate.
+func Verify(ctx context.Context, pool *pgxpool.Pool) error {
+	want, err := ExpectedVersion()
+	if err != nil {
+		return err
+	}
+	var got *int
+	if err := pool.QueryRow(ctx, "SELECT max(version) FROM schema_migrations").Scan(&got); err != nil {
+		return fmt.Errorf("esquema ainda não migrado: %w", err)
+	}
+	if got == nil || *got < want {
+		return fmt.Errorf("esquema na versão %v, esperado ao menos %d (o ms-ingest migra)", got, want)
+	}
+	return nil
+}

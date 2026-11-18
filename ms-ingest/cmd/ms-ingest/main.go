@@ -3,6 +3,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -48,6 +50,7 @@ func spec() service.Spec {
 			{Name: "DEMO_TOKEN", Secret: true},
 			{Name: "RELAY_POLL_INTERVAL", Default: "500ms", Validate: config.ValidDuration},
 			{Name: "RELAY_BATCH_SIZE", Default: "100", Validate: positiveInt},
+			{Name: "RELAY_MAX_ATTEMPTS", Default: "10", Validate: positiveInt},
 		},
 		Setup: setup,
 	}
@@ -81,8 +84,14 @@ func setup(ctx context.Context, vals config.Values, log *slog.Logger) (*service.
 	relay := &outbox.Relay{
 		Store: outbox.PgStore{Pool: pool},
 		Publisher: outbox.PublisherFunc(func(ctx context.Context, m outbox.Message) error {
-			return pub.Publish(ctx, m.RoutingKey, strconv.FormatInt(m.ID, 10), m.Payload)
+			err := pub.Publish(ctx, m.RoutingKey, m.MessageID, m.Payload)
+			if errors.Is(err, amqpx.ErrUnroutable) {
+				// culpa da linha (chave sem fila), não do broker: conta para a quarentena
+				return fmt.Errorf("%w: %w", outbox.ErrRejected, err)
+			}
+			return err
 		}),
+		MaxAttempts:  func() int { n, _ := strconv.Atoi(vals.String("RELAY_MAX_ATTEMPTS")); return n }(),
 		BatchSize:    func() int { n, _ := strconv.Atoi(vals.String("RELAY_BATCH_SIZE")); return n }(),
 		PollInterval: vals.Duration("RELAY_POLL_INTERVAL"),
 		Log:          log,

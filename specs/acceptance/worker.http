@@ -1,0 +1,26 @@
+### RQ7: roteiro do ms-worker (Fase 3). Use com a pilha de pé (./run.sh) e acesso à internet.
+### O worker não tem rota de negócio: ele consome photo.process. Os passos são criar o lote no ingest e observar.
+@ingest = http://localhost:8081
+@worker = http://localhost:8083
+
+### Worker pronto: broker, Postgres, esquema e diretório de miniaturas (200)
+GET {{worker}}/readyz
+
+### Lote do dataset (3 fotos válidas + 1 inexistente). Responde 202 com o batch_id.
+### Esperado: o lote termina (batches.completed_at), 3 photos 'done', 1 'failed' (HTTP 404), 1 batch.completed no outbox,
+### a foto inexistente na fila photo.process.dlq e 3 miniaturas 200x133 em /data/thumbs do volume ms-go-thumbs.
+POST {{ingest}}/batches
+Content-Type: application/json
+
+{"photos":[
+  {"source_url":"https://picsum.photos/id/10/1200/800"},
+  {"source_url":"https://picsum.photos/id/20/1200/800"},
+  {"source_url":"https://picsum.photos/id/30/1200/800"},
+  {"source_url":"https://picsum.photos/id/9999/1200/800"}
+]}
+
+### Observação (no terminal; troque <batch_id>):
+###   docker exec ms-db psql -U app -d app -c "select status, failure_reason, count(*) from photos where batch_id='<batch_id>' group by 1,2"
+###   docker exec ms-db psql -U app -d app -c "select type, count(*) from events where batch_id='<batch_id>' group by 1"
+###   docker exec ms-queues rabbitmqctl list_queues name messages_ready messages_unacknowledged
+### O3 (consumidor parado): docker stop ms-worker, crie um lote, veja photo.process com N Ready, docker start ms-worker.
