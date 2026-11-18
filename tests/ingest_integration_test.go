@@ -674,3 +674,39 @@ func TestIngestLinhaVenenosaVaiParaQuarentenaESegue(t *testing.T) {
 		t.Error("/readyz deveria seguir 200")
 	}
 }
+
+// N3 (Fase 4): SIGTERM com o relay ativo encerra com saída 0 dentro do prazo, e nada fica marcado
+// como publicado sem ter chegado ao broker (o que sobrar sem published_at o próximo relay publica).
+func TestIngestSIGTERMEncerraComSaidaZero(t *testing.T) {
+	url, dbURL := setupBroker(t), freshDB(t)
+	in := startIngest(t, url, dbURL)
+	p := pool(t, dbURL)
+	eventually(t, 15*time.Second, "/readyz", func() bool { return in.status("/readyz") == 200 })
+	if s, _, _ := in.post(t, "", photos(20)); s != 202 {
+		t.Fatalf("POST = %d", s)
+	}
+
+	// só vale a invariante se o relay já publicou algo antes do sinal
+	eventually(t, 15*time.Second, "relay publicou ao menos uma linha", func() bool {
+		return count(t, p, "SELECT count(*) FROM outbox WHERE published_at IS NOT NULL") > 0
+	})
+	done := make(chan error, 1)
+	start := time.Now()
+	_ = in.cmd.Process.Signal(syscall.SIGTERM)
+	go func() { done <- in.cmd.Wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("saída diferente de 0: %v", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("o ms-ingest não encerrou")
+	}
+	if d := time.Since(start); d > 12*time.Second {
+		t.Errorf("encerrou em %s", d)
+	}
+	marked := count(t, p, "SELECT count(*) FROM outbox WHERE published_at IS NOT NULL")
+	if queued := queueMessages(t, url, topology.PhotoProcess.Name); queued < marked {
+		t.Errorf("%d marcadas como publicadas, mas só %d na fila", marked, queued)
+	}
+}

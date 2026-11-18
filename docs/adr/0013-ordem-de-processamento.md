@@ -27,7 +27,7 @@ Se o teste do oráculo mostrar que a ordem falha mesmo com concorrência 1, corr
 
 ## Evidência
 
-Pendente. Cenário de R3 em `specs/oraculo-mensageria.md` (Fases 3 e 4).
+Cenário de R3 em `specs/oraculo-mensageria.md`; **G1 fechado no lado Go na Fase 4** (ver `specs/fase-4-resiliencia.md`).
 
 **Achado do code-review `high` da Fase 2 (2026-11-18), decidido pelo usuário na Fase 3 (2026-11-18):** o relay do outbox lê `ORDER BY id ... FOR UPDATE SKIP LOCKED`, e um `bigserial` não segue a ordem de commit (a tx com o id 10 pode comitar depois da do 11); com duas instâncias do `ms-ingest`, `SKIP LOCKED` ainda intercala os relays. **Decisão: restringir o FIFO.** O R3 do Go vale como "ordem de **chegada ao broker**", com **um** `ms-ingest`, `WORKER_CONCURRENCY=1` e `prefetch=1`. Sem advisory lock (mantém `SKIP LOCKED` e a escala). **Divergência assumida em relação ao v1**: lá a ordem era a da publicação síncrona; aqui é a da leitura do outbox.
 
