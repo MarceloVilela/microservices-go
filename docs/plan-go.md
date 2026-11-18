@@ -26,8 +26,8 @@
 | 2 | `ms-ingest`: API HTTP, outbox e publicação com confirmação | M | **mergeada** (PR #3); `specs/fase-2-ingest-outbox.md` |
 | 3 | `ms-worker`: consumo, download, miniatura, ack manual, idempotência e fim de lote | L | **mergeada** (PR #4); `specs/fase-3-worker.md` |
 | 4 | Resiliência: retry com backoff, DLQ, reconexão e shutdown gracioso | L | **mergeada** (PR #5); `specs/fase-4-resiliencia.md` |
-| 5 | `ms-notification`: evento de fim de lote e abstração `Notifier` (log; e-mail opcional) | S | **implementada em 2026-11-18, aceite verde**; PR pendente (a pedido); `specs/fase-5-notification.md` |
-| 6 | `ms-api`: leitura, stream de eventos (SSE) e reprocessamento da DLQ | M | pendente |
+| 5 | `ms-notification`: evento de fim de lote e abstração `Notifier` (log; e-mail opcional) | S | **mergeada** (PR #6); `specs/fase-5-notification.md` |
+| 6 | `ms-api`: leitura, stream de eventos (SSE) e reprocessamento da DLQ | M | **implementada em 2026-11-18, aceite verde**; PR pendente (a pedido); `specs/fase-6-api.md` |
 | 7 | Observabilidade, segurança e verificação de carga | M | pendente |
 | 8 | Painel Angular (**opcional**) | L | pendente |
 | 9 | Fechamento (long tail, README honesto, comparação com o v1) | S | pendente |
@@ -280,6 +280,8 @@ Entregáveis em `specs/`:
 **Aceite**: reentregar o mesmo `batch.completed` duas vezes gera **um** log (efeito idempotente; a entrega continua *at-least-once*); com o destino indisponível (SMTP fora do ar, por exemplo) o fluxo continua e a falha fica registrada; o e-mail chega **uma vez** no Mailpit.
 
 ### Fase 6: `ms-api`
+
+> **Status (2026-11-18): implementada na branch `fase-6-api`, aceite verde, sem PR.** Spec e decisões do usuário (D1 a D3): `specs/fase-6-api.md`; evidência: `specs/execucao-fase-6.log`; contrato: `specs/openapi-api.yaml` e `specs/events.schema.json`. Escolhas: SSE por `fetch` com Bearer (sem token na query), miniatura também com Bearer, retry só reabre foto `failed` e não toca o lote (o worker conta o lote só na 1ª finalização, `photos.attempts_closed`). Buraco de `seq` espera 2 s antes de ser aceito (F6-9). Abertos: foto `pending` por infra esgotada não aparece em `GET /dlq`; validação do esquema de eventos é estrutural (validador completo na Fase 8).
 
 - Leitura (N9): `GET /batches`, `GET /batches/{id}`, `GET /photos?status=&batch_id=&cursor=`, `GET /photos/{id}/thumb` (com `ETag`), `GET /dlq` (com a causa da falha). Erros em `application/problem+json`.
 - **SSE** em `GET /events` (ADR 0016) lendo o **log de eventos**: `id` = `seq`, retomada por `Last-Event-ID`, *heartbeat* (comentário a cada ~15 s, contra timeout de proxy), limite de buffer por cliente (cliente lento é desconectado e retoma pelo `seq`) e encerramento limpo no shutdown (N3).

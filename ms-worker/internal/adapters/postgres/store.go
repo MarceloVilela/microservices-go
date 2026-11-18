@@ -52,12 +52,14 @@ func (s Store) Finish(ctx context.Context, f app.Finish) (app.Outcome, error) {
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 
 	var batchID string
+	var closed int
 	var class, reason *string
 	if f.FailClass != "" {
 		class, reason = &f.FailClass, &f.FailReason
 	}
-	err = tx.QueryRow(ctx, `UPDATE photos SET status = $2, failure_class = $3, failure_reason = $4, finished_at = now()
-		WHERE id = $1 AND status = 'pending' RETURNING batch_id`, f.PhotoID, f.Status, class, reason).Scan(&batchID)
+	err = tx.QueryRow(ctx, `UPDATE photos SET status = $2, failure_class = $3, failure_reason = $4, finished_at = now(),
+		attempts_closed = attempts_closed + 1
+		WHERE id = $1 AND status = 'pending' RETURNING batch_id, attempts_closed`, f.PhotoID, f.Status, class, reason).Scan(&batchID, &closed)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return app.Outcome{Duplicate: true}, nil // já terminada: nada a contar (o Rollback do defer encerra)
 	}
@@ -72,8 +74,16 @@ func (s Store) Finish(ctx context.Context, f app.Finish) (app.Outcome, error) {
 		return app.Outcome{}, fmt.Errorf("gravar evento da foto: %w", err)
 	}
 
+	if closed > 1 {
+		// foto reaberta pelo ms-api (POST /dlq/{id}/retry): já contou no lote na 1ª finalização (ADR 0018, D3)
+		if err := tx.Commit(ctx); err != nil {
+			return app.Outcome{}, fmt.Errorf("commit: %w", err)
+		}
+		return app.Outcome{}, nil
+	}
+
 	var done, total int
-	if err := tx.QueryRow(ctx, `UPDATE batches SET completed_count = completed_count + 1 WHERE id = $1
+	if err := tx.QueryRow(ctx, `UPDATE batches SET completed_count = LEAST(completed_count + 1, total) WHERE id = $1
 		RETURNING completed_count, total`, batchID).Scan(&done, &total); err != nil {
 		return app.Outcome{}, fmt.Errorf("atualizar contador do lote: %w", err)
 	}

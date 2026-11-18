@@ -102,3 +102,48 @@ func TestLimitBody(t *testing.T) {
 		t.Errorf("acima do limite = %d", got)
 	}
 }
+
+func TestOriginGuardRecusaOrigemForaDaLista(t *testing.T) {
+	h := httpx.OriginGuard([]string{"http://localhost:4200"})(ok)
+	cases := []struct {
+		name   string
+		method string
+		origin string
+		want   int
+	}{
+		{"sem Origin (curl)", "GET", "", 204},
+		{"origem permitida", "GET", "http://localhost:4200", 204},
+		{"origem fora da lista", "GET", "http://evil.example", 403},
+		{"POST de origem fora da lista", "POST", "http://evil.example", 403},
+		{"preflight fora da lista", "OPTIONS", "http://evil.example", 403},
+	}
+	for _, c := range cases {
+		hdr := map[string]string{}
+		if c.origin != "" {
+			hdr["Origin"] = c.origin
+		}
+		rec := do(h, c.method, hdr, "")
+		if rec.Code != c.want {
+			t.Errorf("%s: status %d, quer %d", c.name, rec.Code, c.want)
+		}
+		if c.want == 403 {
+			var p map[string]any
+			_ = json.Unmarshal(rec.Body.Bytes(), &p)
+			if p["code"] != "origin_not_allowed" {
+				t.Errorf("%s: code = %v", c.name, p["code"])
+			}
+		}
+	}
+	// lista vazia: qualquer Origin é recusado (nenhuma origem cross-origin é permitida)
+	if rec := do(httpx.OriginGuard(nil)(ok), "GET", map[string]string{"Origin": "http://x"}, ""); rec.Code != 403 {
+		t.Errorf("lista vazia: status %d, quer 403", rec.Code)
+	}
+}
+
+func TestCORSPermiteLastEventID(t *testing.T) {
+	h := httpx.CORS([]string{"http://localhost:4200"})(ok)
+	rec := do(h, "OPTIONS", map[string]string{"Origin": "http://localhost:4200", "Access-Control-Request-Method": "GET"}, "")
+	if !strings.Contains(rec.Header().Get("Access-Control-Allow-Headers"), "Last-Event-ID") {
+		t.Errorf("preflight sem Last-Event-ID: %v", rec.Header())
+	}
+}

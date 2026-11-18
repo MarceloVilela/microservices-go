@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "events.schema.json",
+  "title": "Evento do ms-api (campo `data` do SSE em GET /events)",
+  "description": "`id` do frame SSE = `seq`. Frames de controle sem `data` deste esquema: `event: reset` (data {\"reason\":\"retention\"}), `event: shutdown` (data {}) e o comentário `: ping`.",
+  "type": "object",
+  "required": ["seq", "type", "batch_id", "photo_id", "payload", "created_at"],
+  "properties": {
+    "seq": { "type": "integer", "minimum": 1 },
+    "type": { "enum": ["batch.created", "photo.done", "photo.failed", "photo.retried", "batch.completed"] },
+    "batch_id": { "type": ["string", "null"], "format": "uuid" },
+    "photo_id": { "type": ["string", "null"], "format": "uuid" },
+    "payload": { "type": "object" },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "type": { "const": "batch.created" },
+        "payload": { "type": "object", "required": ["total"], "properties": { "total": { "type": "integer" } } }
+      }
+    },
+    {
+      "properties": {
+        "type": { "enum": ["photo.done", "photo.failed"] },
+        "payload": {
+          "type": "object",
+          "required": ["status", "failure_class", "failure_reason"],
+          "properties": {
+            "status": { "enum": ["done", "failed"] },
+            "failure_class": { "type": "string" },
+            "failure_reason": { "type": "string" }
+          }
+        }
+      }
+    },
+    { "properties": { "type": { "const": "photo.retried" }, "payload": { "type": "object", "maxProperties": 0 } } },
+    {
+      "properties": {
+        "type": { "const": "batch.completed" },
+        "payload": { "type": "object", "required": ["total", "failed"], "properties": { "total": { "type": "integer" }, "failed": { "type": "integer" } } }
+      }
+    }
+  ]
+}

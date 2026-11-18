@@ -1,0 +1,181 @@
+openapi: 3.0.3
+info:
+  title: ms-api
+  version: "1"
+  description: |
+    Contrato do ms-api (Fase 6): leitura, miniaturas, DLQ, retry e SSE. Erros em `application/problem+json`
+    com `code` estável. Toda rota exige `Authorization: Bearer <DEMO_TOKEN>` (token de demonstração, NÃO é
+    segurança real; ADR 0018). Origem fora de `CORS_ORIGINS` recebe 403 `origin_not_allowed`.
+    Os eventos do SSE estão em `specs/events.schema.json`.
+servers:
+  - url: http://localhost:8082
+security:
+  - bearerAuth: []
+paths:
+  /batches:
+    get:
+      summary: Lista lotes, do mais novo para o mais antigo (cursor estável)
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200': { description: Página de lotes, content: { application/json: { schema: { $ref: '#/components/schemas/BatchPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /batches/{id}:
+    get:
+      summary: Um lote com os contadores
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200': { description: O lote, content: { application/json: { schema: { $ref: '#/components/schemas/Batch' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /photos:
+    get:
+      summary: Lista fotos, da mais nova para a mais antiga (cursor estável)
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, done, failed] }
+        - name: batch_id
+          in: query
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200': { description: Página de fotos, content: { application/json: { schema: { $ref: '#/components/schemas/PhotoPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /photos/{id}/thumb:
+    get:
+      summary: Miniatura JPEG (exige Bearer; o painel baixa por fetch e usa blob URL)
+      description: "`ETag` forte (hash do conteúdo); `If-None-Match` igual devolve 304 sem corpo."
+      parameters:
+        - $ref: '#/components/parameters/ID'
+        - name: If-None-Match
+          in: header
+          schema: { type: string }
+      responses:
+        '200':
+          description: JPEG
+          headers:
+            ETag: { schema: { type: string } }
+            Cache-Control: { schema: { type: string, example: "private, max-age=0, must-revalidate" } }
+          content: { image/jpeg: { schema: { type: string, format: binary } } }
+        '304': { description: Não modificada }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /dlq:
+    get:
+      summary: Fotos com falha (status failed) e a causa, da mais recente para a mais antiga
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200': { description: Página de fotos failed, content: { application/json: { schema: { $ref: '#/components/schemas/PhotoPage' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /dlq/{id}/retry:
+    post:
+      summary: Reabre uma foto failed (pending + novo outbox + evento photo.retried)
+      description: |
+        Só reabre foto `failed`. O lote não é tocado: `completed_count` não muda e `batch.completed` não é
+        reemitido (ADR 0018). Foto `pending` ou `done`: 409 `photo_not_failed`, sem efeito.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '202':
+          description: Foto reaberta; o resultado chega pelo SSE
+          content: { application/json: { schema: { $ref: '#/components/schemas/Retried' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /events:
+    get:
+      summary: Stream SSE do log de eventos (ADR 0016)
+      description: |
+        `id` = `seq` da tabela `events`. Sem `Last-Event-ID` o cliente só vê o futuro. Com ele, recebe o que
+        veio depois, sem perda nem repetição. Fora da janela de retenção (ou com um id que este log não tem)
+        recebe `event: reset` (`data: {"reason":"retention"}`) e deve recarregar o estado pelo REST.
+        Comentário `: ping` a cada ~15 s. No shutdown do serviço: `event: shutdown`. Cliente lento é desconectado.
+        O `EventSource` nativo não envia `Authorization`: use `fetch` com o cabeçalho (ADR 0018).
+        Cada `data` segue `specs/events.schema.json`.
+      parameters:
+        - name: Last-Event-ID
+          in: header
+          schema: { type: integer, minimum: 0 }
+      responses:
+        '200': { description: Stream, content: { text/event-stream: { schema: { type: string } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+  parameters:
+    ID: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+    Cursor: { name: cursor, in: query, description: Opaco; vem de `next_cursor`, schema: { type: string } }
+  responses:
+    BadRequest: { description: "Parâmetro inválido (codes: invalid_limit, invalid_cursor, invalid_status, invalid_batch_id, invalid_last_event_id)", content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+    Unauthorized: { description: "Token ausente ou inválido (code: unauthorized)", content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+    Forbidden: { description: "Origem fora da allowlist (code: origin_not_allowed)", content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+    NotFound: { description: "Não encontrado (codes: batch_not_found, photo_not_found, thumb_not_found)", content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+    Conflict: { description: "Foto não está failed (code: photo_not_failed)", content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code, detail]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string }
+        detail: { type: string }
+    Batch:
+      type: object
+      required: [id, total, completed_count, failed_count, created_at, completed_at]
+      properties:
+        id: { type: string, format: uuid }
+        total: { type: integer }
+        completed_count: { type: integer }
+        failed_count: { type: integer }
+        created_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time, nullable: true }
+    Photo:
+      type: object
+      required: [id, batch_id, source_url, status, failure_class, failure_reason, created_at, finished_at]
+      properties:
+        id: { type: string, format: uuid }
+        batch_id: { type: string, format: uuid }
+        source_url: { type: string }
+        status: { type: string, enum: [pending, done, failed] }
+        failure_class: { type: string, nullable: true }
+        failure_reason: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time, nullable: true }
+    BatchPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Batch' } }
+        next_cursor: { type: string, nullable: true }
+    PhotoPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Photo' } }
+        next_cursor: { type: string, nullable: true }
+    Retried:
+      type: object
+      required: [photo_id, status]
+      properties:
+        photo_id: { type: string, format: uuid }
+        status: { type: string, enum: [pending] }

@@ -11,7 +11,14 @@ services:
         PKG: ./ms-api/cmd/ms-api
     environment:
       AMQP_URL: amqp://${RABBITMQ_USER:?rode ./run.sh, que gera o .env}:${RABBITMQ_PASS:?}@ms-queues:5672/
+      DATABASE_URL: postgres://app:${POSTGRES_PASS:?rode ./run.sh, que gera o .env}@ms-db:5432/app?sslmode=disable
       HTTP_ADDR: ":8082"
+      THUMBS_DIR: /data/thumbs
+      # token de demonstração (NÃO é segurança real); o run.sh gera em .env. Separado do DEMO_TOKEN do ms-ingest
+      DEMO_TOKEN: ${API_DEMO_TOKEN:?rode ./run.sh, que gera o .env}
+      CORS_ORIGINS: ${API_CORS_ORIGINS:-http://localhost:4200}
+    volumes:
+      - thumbs:/data/thumbs:ro
     ports:
       - "127.0.0.1:8082:8082"
     healthcheck:
@@ -24,7 +31,14 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     restart: unless-stopped
+    # maior que o shutdown do servidor (10 s): os streams SSE recebem `event: shutdown` e fecham
+    stop_grace_period: 20s
     networks: [ms-go-network]
+
+volumes:
+  thumbs:
+    # gravado pelo ms-worker; aqui só leitura
+    name: ms-go-thumbs
 
 networks:
   ms-go-network:
