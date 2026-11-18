@@ -10,7 +10,7 @@ Decisões de arquitetura do projeto. Formato: Status, Contexto, Decisão, Altern
 | 0021 Quarentena do outbox e identidade da mensagem | Fase 3 | evidência registrada; **aguardando aprovação** |
 | 0013 Ordem FIFO | Fases 3 e 4 | G1 fechado no lado Go (Fase 4); **aguardando aprovação** |
 | 0017 Miniaturas | Fases 3 e 6 | escrita atômica e `ETag`/`304` |
-| 0020 `Notifier` | Fase 5 | e-mail uma vez no Mailpit; falha de destino isolada |
+| 0020 `Notifier` | Fase 5 | e-mail uma vez no Mailpit; falha de destino isolada; **evidência registrada, aguardando aprovação** |
 | 0016 SSE sobre log de eventos | Fase 6 | reconexão com `Last-Event-ID` e `LISTEN/NOTIFY` |
 | 0018 CORS, autenticação do SSE e DLQ | **antes** da Fase 6 | decisão de autenticação do SSE e das miniaturas |
 | 0009 Logging e observabilidade | Fases 5 e 7 | `slog` com correlação; métricas |

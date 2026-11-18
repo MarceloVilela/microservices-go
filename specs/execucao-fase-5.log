@@ -1,0 +1,27 @@
+# Evidência da Fase 5 (ms-notification), 2026-11-18, depois do /code-review high
+# make check = 0; make integration = 0 (8 testes do ms-notification, inclui duas réplicas com SMTP lento e versão de contrato);
+# mutações: desligar a dedup quebra o teste de unidade e o de reentrega; trocar o advisory lock por um no-op quebra o teste das duas réplicas (e-mails = 2).
+# make accept = 0 (Fases 1 a 5); abaixo, a saída do aceite da Fase 5 (Mailpit v1.34.0 real, broker real, Picsum real).
+== 1. pilha pronta
+ok    ms-worker /readyz (200)
+ok    ms-ingest /readyz (200)
+ok    ms-notification /readyz (200)
+ok    Mailpit (200)
+ok    consumidor do ms-notification conectado (true)
+== 2. um lote termina e o e-mail chega UMA vez (uma foto válida, uma inválida)
+ok    POST /batches (202)
+ok    e-mail no Mailpit (1)
+ok    linha em notifications (1)
+ok    log de notificação (slog) (1)
+ok    assunto menciona o lote
+== 3. o MESMO batch.completed reentregue não gera segundo e-mail nem segundo log
+ok    mensagem republicada e roteada (true)
+ok    batch.completed consumida (0)
+ok    e-mails do lote depois da reentrega (1)
+ok    logs do lote depois da reentrega (1)
+ok    linhas em notifications (1)
+== 4. SIGTERM: o ms-notification encerra com saída 0
+ok    saída do ms-notification (0)
+ok    ms-notification /readyz (200)
+
+ACEITE DA FASE 5: OK

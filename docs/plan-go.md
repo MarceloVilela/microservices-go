@@ -24,9 +24,9 @@
 | 0 | Auditoria do v1, spec, ADRs e spikes | M | **G0 fechado em 2026-11-18**; PR #1 mergeado |
 | 1 | Esqueleto: monorepo Go, Docker, CI, lint e topologia do broker | M | **mergeada** (PR #2); `specs/fase-1-esqueleto.md` |
 | 2 | `ms-ingest`: API HTTP, outbox e publicação com confirmação | M | **mergeada** (PR #3); `specs/fase-2-ingest-outbox.md` |
-| 3 | `ms-worker`: consumo, download, miniatura, ack manual, idempotência e fim de lote | L | **implementada em 2026-11-18, aceite verde**; PR pendente (a pedido); `specs/fase-3-worker.md` |
-| 4 | Resiliência: retry com backoff, DLQ, reconexão e shutdown gracioso | L | pendente |
-| 5 | `ms-notification`: evento de fim de lote e abstração `Notifier` (log; e-mail opcional) | S | pendente |
+| 3 | `ms-worker`: consumo, download, miniatura, ack manual, idempotência e fim de lote | L | **mergeada** (PR #4); `specs/fase-3-worker.md` |
+| 4 | Resiliência: retry com backoff, DLQ, reconexão e shutdown gracioso | L | **mergeada** (PR #5); `specs/fase-4-resiliencia.md` |
+| 5 | `ms-notification`: evento de fim de lote e abstração `Notifier` (log; e-mail opcional) | S | **implementada em 2026-11-18, aceite verde**; PR pendente (a pedido); `specs/fase-5-notification.md` |
 | 6 | `ms-api`: leitura, stream de eventos (SSE) e reprocessamento da DLQ | M | pendente |
 | 7 | Observabilidade, segurança e verificação de carga | M | pendente |
 | 8 | Painel Angular (**opcional**) | L | pendente |
@@ -272,6 +272,8 @@ Entregáveis em `specs/`:
 **Aceite**: roteiros de `oraculo-mensageria.md` passam contra o Go; id inválido do dataset termina na DLQ com a causa registrada; `Retry-After` de 45 s espera o degrau de 2 min (arredondado para cima); **G1** fechado.
 
 ### Fase 5: `ms-notification`
+
+> **Status (2026-11-18): implementada na branch `fase-5-notification`, aceite verde, sem PR.** Spec e decisões: `specs/fase-5-notification.md` (D1: dedup em tabela `notifications` no Postgres; D2: falha de destino é registrada e a mensagem recebe ack). Evidência: `specs/execucao-fase-5.log`. O `Supervisor` foi para `platform/amqpx`. Itens do code-review registrados (sem reprocesso de e-mail com `last_error`, consumidor duplicado com o worker, migração do notification feita pelo ingest): ver `specs/fase-5-notification.md`.
 
 - Consome `batch.completed` e notifica por uma interface pequena `Notifier`, **definida no consumidor** (ADR 0020), deduplicando por `batch_id`. Destino padrão: `slog` (JSON). Destino opcional: **e-mail via SMTP** (Mailpit em container no desenvolvimento, sem envio real). Nenhum destino **nunca** derruba o consumo.
 
