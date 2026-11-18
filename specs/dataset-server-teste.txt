@@ -1,0 +1,9 @@
+=== RUN   TestBigPixels
+    handler_test.go:41: png: 111293 bytes, 30000x30000 = 900 Mpx; DecodeConfig alocou 5280 bytes
+--- PASS: TestBigPixels (6.19s)
+=== RUN   TestFlaky
+--- PASS: TestFlaky (6.22s)
+=== RUN   TestRateLimit
+--- PASS: TestRateLimit (6.28s)
+PASS
+ok  	dataset/server	19.708s

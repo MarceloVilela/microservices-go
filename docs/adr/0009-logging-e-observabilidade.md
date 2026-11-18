@@ -10,21 +10,21 @@ O v1 derrubava a rota principal quando o Loggly falhava. O projeto precisa de lo
 
 ## Decisão
 
-`log/slog` em JSON, com `correlation_id`/`batch_id`; nunca logar segredo ou token. **Loggly, se mantido, é sink opcional que nunca derruba o fluxo.** Métricas (profundidade das filas, jobs por status, latência por job) via `expvar` ou Prometheus, decidido na Fase 7. hipótese: **não decidida** até a evidência e a sua aprovação.
+`log/slog` em JSON, com `correlation_id`/`batch_id`; nunca logar segredo ou token. **Loggly descartado** (decidido em 2026-11-17; o v1 nunca confirmou eventos lá). Notificação por destinos fica na ADR 0020. Métricas (profundidade das filas, jobs por status, latência por job) via `expvar` ou Prometheus, decidido na Fase 7. hipótese: **não decidida** até a evidência e a sua aprovação.
 
 ## Alternativas
 
-- Descartar o Loggly (decisão em aberto 4 do plano).
+- Manter o Loggly como sink opcional (descartado: sem conta confirmada, sem valor para o portfólio).
 - Biblioteca de log de terceiros: sem ganho sobre `slog`.
 
 ## Custo
 
-Sink opcional exige isolar falha e registrá-la; Prometheus adiciona dependência.
+Prometheus adiciona dependência; sem Loggly, não há log centralizado externo (aceito: só local).
 
 ## Critério de reversão
 
-Se o Loggly continuar sem confirmar eventos na conta do v1, descartar o sink.
+Se passar a existir necessidade de log centralizado, reabrir com nova ADR.
 
 ## Evidência
 
-Pendente. Fase 5 (falha do destino de log não propaga) e Fase 7.
+Pendente. Fase 7 (métricas); o isolamento de falha de destino é coberto pela ADR 0020.

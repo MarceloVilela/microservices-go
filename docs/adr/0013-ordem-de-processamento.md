@@ -27,4 +27,4 @@ Se o teste do oráculo mostrar que a ordem falha mesmo com concorrência 1, corr
 
 ## Evidência
 
-Pendente. Cenário de R3 em `oraculo-mensageria.md` (Fases 3 e 4).
+Pendente. Cenário de R3 em `specs/oraculo-mensageria.md` (Fases 3 e 4).

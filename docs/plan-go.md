@@ -7,7 +7,7 @@
 >
 > O projeto ganha um **painel Angular** (fase opcional) que torna a fila visível: lote ao vivo, galeria de
 > miniaturas e fila de falhas (DLQ) com reprocessamento. Ele consome um serviço novo, o `ms-api`, e **não**
-> o backend do `devfinder` (domínios sem relação; ver `zangular.md`).
+> o backend do `devfinder` (domínios sem relação; ver `projects-ia/microservices-frontend-angular/docs/angular101.md`, antigo `zangular.md`).
 >
 > Metodologia: a mesma do `php-laravel/plan.md` (spec antes do código, ADR com critério de reversão,
 > um PR por fase, gates com evidência versionada).
@@ -21,12 +21,12 @@
 
 | Fase | Nome | Tamanho | Status |
 |---|---|---|---|
-| 0 | Auditoria do v1, spec, ADRs e spikes | M | pendente |
+| 0 | Auditoria do v1, spec, ADRs e spikes | M | **G0 fechado em 2026-11-18**; PR pendente (a pedido) |
 | 1 | Esqueleto: monorepo Go, Docker, CI, lint e topologia do broker | M | pendente |
 | 2 | `ms-ingest`: API HTTP, outbox e publicação com confirmação | M | pendente |
 | 3 | `ms-worker`: consumo, download, miniatura, ack manual, idempotência e fim de lote | L | pendente |
 | 4 | Resiliência: retry com backoff, DLQ, reconexão e shutdown gracioso | L | pendente |
-| 5 | `ms-notification`: evento de fim de lote e log | S | pendente |
+| 5 | `ms-notification`: evento de fim de lote e abstração `Notifier` (log; e-mail opcional) | S | pendente |
 | 6 | `ms-api`: leitura, stream de eventos (SSE) e reprocessamento da DLQ | M | pendente |
 | 7 | Observabilidade, segurança e verificação de carga | M | pendente |
 | 8 | Painel Angular (**opcional**) | L | pendente |
@@ -56,19 +56,18 @@ As três pendências do v1 viram **requisitos de primeira classe** no Go (ver se
 | D1 | **Go** (versão estável vigente, fixada na ADR), um módulo por serviço com `go.work` e um módulo `platform` compartilhado *(hipótese; ADR 0015)* | PHP 8.4 + Lumen 10 (descontinuado) | Lumen está em fim de vida; Go é a stack comum para consumers concorrentes e binários pequenos | Spike mostrar fricção que não compense |
 | D2 | **Cliente `amqp091-go`** com camada própria de reconexão | `php-amqplib`, sem reconexão | Biblioteca oficial do RabbitMQ para Go; a reconexão é responsabilidade do chamador, então precisa de código e de teste | Biblioteca descontinuada ou bug bloqueante no spike |
 | D3 | **Ack manual**, mensagem **persistente**, **publisher confirms** | `no_ack=true`, não persistente, sem confirmação | Corrige as pendências do v1; é o que torna R5 verdadeiro com o broker reiniciando | Custo de latência inaceitável no spike |
-| D4 | **Retry por degraus**: uma fila de retry por degrau (5 s, 30 s, 2 min, 5 min), cada uma com **TTL fixo** (sem bloqueio de cabeça de fila) e DLX de volta; depois **DLQ**. `Retry-After` é arredondado **para cima** ao degrau mais próximo. **Sem jitter** nesse mecanismo (assumido, ver abaixo) | sem retry; **retry atrasado nativo das quorum queues** (a doc oficial do RabbitMQ o recomenda para este caso; a versão mínima, 4.3 segundo a doc, e a compatibilidade com a imagem do broker a usar ficam para o S2 confirmar) | Padrão documentado de TTL + DLX, sem depender de recurso novo do broker | S2 mostrar *thundering herd* relevante ou o retry nativo das quorum queues ser viável: ADR 0005 troca por ele, por retry no Postgres (`next_attempt_at` com jitter, aproveitando o relay do outbox) ou por plugin de mensagem atrasada |
+| D4 | **Retry por degraus**: uma fila de retry por degrau (5 s, 30 s, 2 min, 5 min), cada uma com **TTL fixo** (sem bloqueio de cabeça de fila) e DLX de volta; depois **DLQ**. `Retry-After` é arredondado **para cima** ao degrau mais próximo. **Sem jitter** nesse mecanismo (assumido; herd medido no S2). **Decidido pelo usuário em 2026-11-17** (ADR 0005), comparando com o retry nativo da quorum queue | sem retry | Escada exata (5,003 s e 30,004 s medidos), `Retry-After` por degrau, fila clássica (confirm p50 0,42 ms) | O herd causar `429` no Picsum na carga da Fase 7, ou a escada ficar cara de manter: ADR 0005 troca pelo retry nativo da quorum queue (S2) ou por retry no Postgres (`next_attempt_at` com jitter, aproveitando o relay do outbox) |
 | D5 | **PostgreSQL** + `pgx` + `sqlc` *(hipótese)* | MySQL 8.4 + Eloquent | SQL tipado e gerado, sem ORM; `SELECT ... FOR UPDATE SKIP LOCKED` para o relay do outbox (SQLite não tem) | `database/sql` puro bastar para o volume do projeto. **Não** é justificativa que Postgres seja melhor no `testcontainers-go`: há módulo oficial para os dois, e essa afirmação saiu do plano |
 | D6 | **Estrutura por serviço**: `cmd/`, `internal/{domain,app,adapters}`; broker atrás de uma interface pequena definida **no consumidor** | `BrokerInterface` + provider | Idiomático em Go; interface no lado de quem usa, não de quem implementa | Cerimônia sem valor (revisitar na Fase 1) |
 
-**Sobre o jitter (D4)**: com TTL fixo por fila não há jitter, e jobs que falharam juntos voltam juntos. Para o
-volume deste projeto isso é aceito e **medido** no S2; se o número mostrar problema, a ADR 0005 troca o mecanismo.
-O plano não promete jitter que o mecanismo escolhido não entrega.
+**Sobre o retry (D4, decidido em 2026-11-17)**: o S2 (`specs/spikes/s2-retry.md`) mediu a escada TTL + DLX
+(5,003 s e 30,004 s) e o retry nativo da quorum queue (linear, `min × contagem`). O usuário escolheu a **escada**; a
+tabela comparativa está na ADR 0005. Custos assumidos:
 
-**Sobre o retry nativo das quorum queues (D4)**: a conferência com a documentação oficial do RabbitMQ (`/docs/dlx`)
-mostrou que TTL + DLX é um padrão documentado, mas que a doc recomenda o retry atrasado das quorum queues para este
-caso. Isso não está testado aqui. A ADR 0005 compara os dois mecanismos com o S2 e decide; até lá o plano fica com
-TTL fixo. Também vale a ressalva da doc sobre TTL por mensagem: mensagens expiradas podem ficar atrás de não
-expiradas, e por isso o plano usa uma fila por degrau, com TTL na fila.
+- **Sem jitter**: jobs que falharam juntos voltam juntos. Medido no S2: **105 de 200 reentregas em 100 ms**.
+- **Uma fila por degrau, com TTL na fila**: TTL por mensagem em fila única bloqueia (a de 1 s esperou a de 6 s).
+- O retry nativo fica como alternativa documentada e medida (ADR 0005), com as armadilhas conhecidas: `nack` com
+  requeue não conta, o broker manda à DLQ sozinho no `x-delivery-limit` e quorum custa 12× mais por confirm.
 
 **Custo assumido às claras**: trocar o domínio quebra o oráculo de dados do v1 (10 usuários, 50 transações).
 O dataset de paridade passa a ser de **fotos** (ver Fase 0). Isso exige a ADR 0001, de escopo.
@@ -83,7 +82,7 @@ conjuntos de ids não se misturam.
 | R1 `POST /transaction` persiste e responde | **RQ1** `POST /batches` cria um lote e N jobs de foto, grava tudo **e a intenção de publicar (outbox) na mesma transação** e responde `202`. Aceita `Idempotency-Key` | domínio novo; outbox |
 | R2 publica `{transaction,name,email,value}` na fila sem esperar resposta | **RQ2** um relay publica um job `photo.process` por foto, **com confirmação do broker**, sem esperar o worker | confirms; mensagem persistente |
 | R3 consumidor FIFO | **RQ3** `ms-worker` consome com `prefetch` e N goroutines. **A ordem FIFO só vale com `WORKER_CONCURRENCY=1` e `prefetch=1`** (modo oráculo); com concorrência maior a ordem não é garantida | divergência assumida (ADR 0013) |
-| R4 `POST /notification/send` grava no Loggly | **RQ4** evento `batch.completed` consumido por `ms-notification`, que loga com `slog` | Loggly vira opcional, **sem derrubar o fluxo** |
+| R4 `POST /notification/send` grava no Loggly | **RQ4** evento `batch.completed` consumido por `ms-notification`, que notifica por uma abstração `Notifier` (padrão: `slog`; opcional: e-mail via SMTP) | Loggly **descartado** (ADR 0009); falha de destino **não derruba o fluxo** |
 | R5 mensagens ficam em *Ready* se o consumidor cai | **RQ5** vale também com **broker reiniciando** (fila durável + mensagem persistente + reconexão) | mais forte que o v1 |
 | R6 seed de 10 usuários e 50 transações | **RQ6** dataset de paridade: ids de fotos fixos do Picsum, lote determinístico | domínio novo |
 | R7 `client.http` | **RQ7** `specs/acceptance/*.http` | igual |
@@ -99,7 +98,7 @@ Requisitos novos (sem equivalente no v1):
 - **N6 Fim de lote**: um lote termina quando **todas** as suas fotos chegam a um estado final, `done` **ou** `failed` (foto na DLQ conta como terminada). O evento `batch.completed` sai **uma vez por lote** (ver Fase 3); o consumo é idempotente por `batch_id`.
 - **N7 Painel** (Fase 8, opcional): o `ms-api` expõe leitura, SSE e reprocessamento; o frontend nunca fala direto com o broker nem com o banco. O painel também **cria lotes** (`POST /batches` no `ms-ingest`, com CORS e o mesmo token) e tem um modo "lote com falhas" (dataset com ids inválidos) para exercitar retry e DLQ sem `curl`.
 - **N8 Eventos para o painel**: todo estado visível ao frontend vem de um **log de eventos** com `seq` (seção 6), nunca de polling do estado nem de mensagens do broker. O esquema dos eventos é versionado em `specs/events.schema.json`.
-- **N9 Contrato amigável ao frontend**: listagens com **paginação por cursor**, filtro por `status` e `batch_id` e ordenação estável (`GET /jobs` do `zangular.md` é `GET /photos?status=`); erros em formato único (`application/problem+json`) com `code` estável para o painel mapear mensagens; `Cache-Control`/`ETag` nas miniaturas.
+- **N9 Contrato amigável ao frontend**: listagens com **paginação por cursor**, filtro por `status` e `batch_id` e ordenação estável (`GET /jobs` do `angular101.md`, antigo `zangular.md`, é `GET /photos?status=`); erros em formato único (`application/problem+json`) com `code` estável para o painel mapear mensagens; `Cache-Control`/`ETag` nas miniaturas.
 
 ## 4. Lições herdadas (gates, não recomendações)
 
@@ -140,11 +139,11 @@ Definição de pronto (toda fase com código):
 | Gate | Quando | Critério (metas a calibrar no spike) | Se falhar |
 |---|---|---|---|
 | **G0** Viabilidade | fim da Fase 0 | S1 a S4 com resultado medido | Replanejar D1 a D6 antes de escrever domínio |
-| **G1** Paridade de mensageria | Fases 3 e 4 | Os cenários de R2, R3 e R5 do v1 passam também no Go (ver `oraculo-mensageria.md`). **O cenário de R3 roda com `WORKER_CONCURRENCY=1` e `prefetch=1`**; a divergência de ordem com concorrência maior está na ADR 0013 | Corrigir o Go, ou registrar divergência como ADR **aprovada** (nunca reescrever o cenário em silêncio) |
+| **G1** Paridade de mensageria | Fases 3 e 4 | Os cenários de R2, R3 e R5 do v1 passam também no Go (ver `specs/oraculo-mensageria.md`). **O cenário de R3 roda com `WORKER_CONCURRENCY=1` e `prefetch=1`**; a divergência de ordem com concorrência maior está na ADR 0013 | Corrigir o Go, ou registrar divergência como ADR **aprovada** (nunca reescrever o cenário em silêncio) |
 | **G2** Eficiência | Fases 3 e 7 | Imagem final e memória do worker medidas e registradas; **sem meta inventada**, só número real | Investigar antes de continuar |
 | **G3** Qualidade | toda fase | `-race`, lint e `govulncheck` com `0` | Corrigir antes do PR |
 | **G4** Arquitetura | toda fase com código | Regra de dependência (`internal/domain` não importa `adapters`; serviços só dependem de `platform`, nunca uns dos outros) verificada por teste ou `depguard` | Corrigir; mudar a regra só por ADR |
-| **G5** Contrato | Fases 6 e 8 | OpenAPI do `ms-api` e do `ms-ingest` e `events.schema.json` validados no CI; cliente e tipos TypeScript do painel **gerados** a partir deles, sem diferença (`git diff --exit-code`) | Corrigir o contrato primeiro, depois o código |
+| **G5** Contrato | Fases 6 e 8 | OpenAPI do `ms-api` e do `ms-ingest` e `events.schema.json` validados no CI; cliente e tipos TypeScript do painel (repositório separado) **gerados** a partir do contrato publicado aqui, sem diferença (`git diff --exit-code` no repositório do painel) | Corrigir o contrato primeiro, depois o código |
 
 ## 6. Arquitetura alvo (hipótese a confirmar nos spikes)
 
@@ -163,7 +162,7 @@ cliente ──POST /batches (Idempotency-Key)──▶ ms-ingest ──tx única
                                              photo.process.dlq
 
 ms-worker ── tx: status da foto + contador do lote (+ linha no outbox quando fecha) ──▶ Postgres
-relay ─▶ queue batch.completed ─▶ ms-notification (slog; dedup por batch_id; Loggly opcional)
+relay ─▶ queue batch.completed ─▶ ms-notification (Notifier: slog, e-mail opcional; dedup por batch_id)
 
 worker/ms-api ── na mesma tx de cada mudança de estado ──▶ Postgres (tabela events, seq crescente) + NOTIFY
 ms-api ──leitura──▶ Postgres        ms-api ──LISTEN + eventos com seq > Last-Event-ID──▶ SSE (/events) ──▶ painel Angular (Fase 8)
@@ -189,7 +188,7 @@ Entregáveis em `specs/`:
 1. **`auditoria-v1.md`**: lê o código do v1 (não só o `specs.md`) e lista achados, incluindo as 3 pendências do code review e o que mais aparecer. Cada achado com decisão (herdar, corrigir, descartar).
 2. **`oraculo-mensageria.md`**: cenários observáveis do v1 que o Go precisa reproduzir (publicar sem esperar; fila em *Ready* com consumidor parado; entrega ao voltar; FIFO). Cada cenário é um roteiro executável contra o v1 e contra o Go, **com os parâmetros do Go declarados** (ex.: R3 com concorrência 1).
 3. **`dataset-de-paridade.md`**: lote determinístico de fotos (ids fixos do Picsum), tamanhos esperados de miniatura e o resultado esperado por foto, incluindo ids propositalmente inválidos (404), uma URL fora da allowlist e uma imagem acima do teto de pixels, para exercitar retry, DLQ direta e fim de lote com falha.
-4. **ADRs** em `specs/adr/` (formato do `php-laravel`: Status, Contexto, Decisão, Alternativas, Custo, Critério de reversão). **Nenhuma vira `aceita` antes da evidência e da sua aprovação.**
+4. **ADRs** em `docs/adr/` (formato do `php-laravel`: Status, Contexto, Decisão, Alternativas, Custo, Critério de reversão). **Nenhuma vira `aceita` antes da evidência e da sua aprovação.**
 
    | ADR | Tema |
    |---|---|
@@ -197,11 +196,11 @@ Entregáveis em `specs/`:
    | 0002 | Go e estrutura de módulos |
    | 0003 | Cliente AMQP e reconexão |
    | 0004 | Entrega: ack manual, persistência e publisher confirms |
-   | 0005 | Retry por degraus (TTL fixo + DLX) **versus** retry atrasado nativo das quorum queues, DLQ, `Retry-After` e a questão do jitter |
+   | 0005 | Retry por degraus (TTL fixo + DLX), DLQ e `Retry-After`: **decidido** (escada) contra o retry nativo das quorum queues; herd e falta de jitter como custos assumidos |
    | 0006 | Idempotência do worker |
    | 0007 | Banco e acesso a dados (`pgx` + `sqlc` ou `database/sql`) |
    | 0008 | HTTP (`net/http` com mux da stdlib ou `chi`) |
-   | 0009 | Logging e observabilidade (`slog`; Loggly opcional) |
+   | 0009 | Logging e observabilidade (`slog`; Loggly descartado) |
    | 0010 | Fonte de fotos, allowlist de hosts e SSRF completa (redirect, IP resolvido, teto de pixels) |
    | 0011 | Imagem Docker final (`distroless/static` ou `scratch` com CA certs), versão do Go e healthcheck |
    | 0012 | **Outbox** e `Idempotency-Key` do `POST /batches` (consistência banco × fila) |
@@ -211,21 +210,22 @@ Entregáveis em `specs/`:
    | 0016 | `ms-api`: tempo real com **SSE** sobre o **log de eventos** (`seq` + `LISTEN/NOTIFY`), retenção, *heartbeat* e cliente lento (alternativas: WebSocket, polling) |
    | 0017 | Armazenamento das miniaturas: volume local ou MinIO; cache (`ETag`) e acesso pelo `<img>` |
    | 0018 | Painel: CORS (ingest e `ms-api`), **autenticação do SSE** (o `EventSource` nativo não envia `Authorization`), acesso às miniaturas e semântica do reprocessamento da DLQ |
-   | 0019 | Painel Angular: versão, estrutura, estado (signals × NgRx), cliente SSE, geração do cliente TypeScript e estratégia de testes |
+   | 0019 | Painel Angular em **repositório separado**: versão, estado (signals × NgRx), cliente SSE, geração do cliente TypeScript a partir do contrato publicado (G5 entre repositórios) e estratégia de testes |
+   | 0020 | Notificação: interface `Notifier` no consumidor, destinos (`slog` padrão, SMTP opcional com Mailpit no desenvolvimento), idempotência por `batch_id` e isolamento de falha |
 
 5. **Spikes** (resultado medido em `specs/spikes/`):
 
    | Spike | Pergunta | Evidência |
    |---|---|---|
    | S1 | `amqp091-go`: publisher confirms e reconexão funcionam com RabbitMQ 4? Quanto custa a latência? | número medido, 1.000 publicações |
-   | S2 | Retry por degraus com TTL fixo + DLX se comporta como esperado (ordem, backoff, DLQ)? Há *thundering herd* mensurável? O retry atrasado nativo das quorum queues está disponível na versão do broker usada e faz melhor? | log do painel e do teste |
+   | S2 | *(executado em 2026-11-17)* Retry por degraus com TTL fixo + DLX se comporta como esperado (ordem, backoff, DLQ)? Há *thundering herd* mensurável? O retry atrasado nativo das quorum queues está disponível na versão do broker usada e faz melhor? | log do painel e do teste |
    | S3 | **Lorem Picsum**: `/v2/list`, redimensionamento, redirects, limites e erro de id inexistente (**a API foi recomendada de memória; confirmar contrato e comportamento antes de aceitar a ADR 0010**) | respostas reais versionadas |
    | S4 | `testcontainers-go` com RabbitMQ 4 e Postgres roda no CI sem segredo? O relay com `SKIP LOCKED` se comporta com duas instâncias? | execução no CI local |
    | S5 | Imagem final: download HTTPS e `healthcheck` funcionam dentro dela? | execução em container |
 
-6. Referências cruzadas do `CLAUDE.md` e do `specs/README.md` conferidas contra os arquivos reais.
+6. Referências cruzadas do `CLAUDE.md` e do `specs/README.md` conferidas contra os arquivos reais (feito em 2026-11-17; ver `specs/execucao-fase-0.log`).
 
-**Aceite**: auditoria, oráculo e dataset escritos; ADRs 0001 a 0019 escritas (as com evidência, aceitas); S1 a S5 com número; **G0** fechado.
+**Aceite**: auditoria, oráculo e dataset escritos; ADRs 0001 a 0020 escritas (as com evidência, aceitas); S1 a S5 com número; **G0** fechado.
 
 ### Fase 1: Esqueleto
 
@@ -269,9 +269,9 @@ Entregáveis em `specs/`:
 
 ### Fase 5: `ms-notification`
 
-- Consome `batch.completed`, loga com `slog` (JSON), **deduplicando por `batch_id`**. Loggly, se mantido, é um *sink* opcional que **nunca** derruba o consumo.
+- Consome `batch.completed` e notifica por uma interface pequena `Notifier`, **definida no consumidor** (ADR 0020), deduplicando por `batch_id`. Destino padrão: `slog` (JSON). Destino opcional: **e-mail via SMTP** (Mailpit em container no desenvolvimento, sem envio real). Nenhum destino **nunca** derruba o consumo.
 
-**Aceite**: reentregar o mesmo `batch.completed` duas vezes gera **um** log (efeito idempotente; a entrega continua *at-least-once*); com o destino de log indisponível o fluxo continua e a falha fica registrada.
+**Aceite**: reentregar o mesmo `batch.completed` duas vezes gera **um** log (efeito idempotente; a entrega continua *at-least-once*); com o destino indisponível (SMTP fora do ar, por exemplo) o fluxo continua e a falha fica registrada; o e-mail chega **uma vez** no Mailpit.
 
 ### Fase 6: `ms-api`
 
@@ -293,12 +293,12 @@ Entregáveis em `specs/`:
 
 ### Fase 8: Painel Angular (opcional)
 
-Só começa com a Fase 7 mergeada. Fica em diretório próprio (`web/`; decisão 5 da seção 10).
+Só começa com a Fase 7 mergeada. Fica em **repositório separado** (`projects-ia/microservices-frontend-angular`; decisão 5 da seção 10); o contrato (OpenAPI e `events.schema.json`) é publicado por este repositório e consumido lá (ADR 0019).
 
 - **Angular** em versão estável vigente (ADR 0019), standalone components e signals; `HttpClient` com interceptor do token; interceptor de erro que mapeia o `code` do `problem+json`; cliente e tipos TypeScript **gerados** do OpenAPI e de `events.schema.json` (G5).
 - **SSE via RxJS**: um serviço que embrulha o stream (ADR 0018: `fetch` com cabeçalho) num `Observable`, com reconexão com backoff, `Last-Event-ID`, indicação de "desconectado" e *unsubscribe* ao destruir o componente (sem vazamento de conexão).
 - Telas: **criar lote** (dataset normal e "com falhas"), **lote em andamento** (progresso ao vivo), **galeria de miniaturas** (paginação por cursor, `loading="lazy"`), **fila de falhas (DLQ)** com a causa e botão de reprocessar; estados de carregamento, vazio e erro em todas.
-- **Execução**: serviço `web` no compose (build estático servido por nginx; `ng serve` só em desenvolvimento), origem registrada na allowlist de CORS; **job de CI `web`** (`npm ci`, lint, testes, build de produção, geração do cliente sem diff).
+- **Execução**: serviço `web` no compose deste repositório, apontando para a imagem ou o build do repositório do painel (nginx servindo o build estático; `ng serve` só em desenvolvimento), origem registrada na allowlist de CORS; **job de CI no repositório do painel** (`npm ci`, lint, testes, build de produção, geração do cliente a partir do contrato publicado, sem diff).
 - Testes: unidade dos serviços (RxJS com *marble tests*), componente, e um teste ponta a ponta (Playwright contra o compose) do fluxo "criar lote com falhas → ver na DLQ → reprocessar".
 
 **Aceite**: com o backend no ar, um lote criado **pelo painel** aparece progredindo na tela; a foto inválida surge na DLQ com a causa; o reprocessamento atualiza a tela sem recarregar; derrubar o `ms-api` mostra "desconectado" e, ao voltar, reconecta e **recupera os eventos perdidos** pelo `Last-Event-ID`; sem vazamento de conexões SSE ao navegar entre telas; build de produção sem warning (`echo $?` = `0`); teste ponta a ponta verde no CI.
@@ -324,23 +324,25 @@ Só começa com a Fase 7 mergeada. Fica em diretório próprio (`web/`; decisão
 
 - **Domínio diferente do v1**: a paridade é de comportamento, não de dados. Assumido, vai no README.
 - **Lorem Picsum não foi verificado**: a recomendação veio de memória. O S3 confirma antes da ADR 0010; se falhar, o fallback é Pexels (chave grátis, com rate limit).
-- **Sem jitter nos degraus de retry**: assumido e medido no S2; a ADR 0005 prevê a troca de mecanismo.
+- **Sem jitter nos degraus de retry**: assumido; o herd foi medido no S2 (105 de 200 reentregas em 100 ms) e fica como custo assumido; a ADR 0005 prevê a troca de mecanismo.
 - **Outbox aumenta a superfície**: um relay, uma tabela e *at-least-once* na publicação. Em troca elimina a inconsistência banco × fila. Se a ADR 0012 for rejeitada, a Fase 2 precisa de outra resposta para o `503` parcial.
 - **Escopo**: reconexão, idempotência, outbox e shutdown gracioso são onde a reescrita ganha valor, e onde pode crescer. Fases 3 e 4 são `L` de propósito.
-- **Angular compete com a vaga-alvo React** (`CLAUDE.md` deste diretório): por isso o painel é **opcional** e só vem depois do backend validado.
+- **Angular compete com a vaga-alvo React** (`published/reactjs/CLAUDE.md`, "Motivação real"): por isso o painel é **opcional** e só vem depois do backend validado.
 - **Autenticação do SSE e das miniaturas**: `EventSource` e `<img>` não enviam `Authorization`. A ADR 0018 decide (stream por `fetch`, URL não adivinhável ou cookie); token estático de demonstração **não é** segurança real e o README diz isso.
 - **Log de eventos cresce**: precisa de retenção; cliente que volta depois da janela recebe "recarregue o estado" em vez de eventos faltando.
 - **Reprocessar a DLQ pelo painel** mexe em idempotência e no estado do lote já completo; a ADR 0018 decide antes da Fase 6.
 - **Sem deploy real**: o v1 só roda local. Manter assim; deploy fica fora de escopo (regra de custo do workspace).
 
-## 10. Decisões em aberto (para você decidir antes da Fase 0)
+## 10. Decisões
 
-1. **Onde mora o projeto e como se chama?** Sugestão: pasta nova ao lado do v1 (`projects-ia/ec-photos-go`), repositório novo. O v1 fica **intocado**, como oráculo.
-2. **O `ms-notification` entra?** Preserva o desenho do v1, mas é a parte mais fina. Alternativa: fundir no worker e cortar a Fase 5 (o fim de lote continua no worker, N6).
-3. **Banco**: Postgres + `sqlc` *(hipótese)*. SQLite deixaria de servir ao relay do outbox (`SKIP LOCKED`); a escolha agora tem esse custo explícito.
-4. **Loggly**: manter como sink opcional ou descartar? O v1 nunca conseguiu confirmar eventos lá (conta/organização do token).
-5. **Frontend**: fica em `web/` no mesmo repositório (um clone, um CI, cliente gerado do mesmo OpenAPI) ou em repositório separado (portfólio Angular isolado)? Sugestão: `web/` no mesmo repositório.
-6. **`ms-api` separado do `ms-ingest`?** Separar mantém a porta do painel isolada da porta de escrita; fundir poupa um serviço. Sugestão: separados.
+Decididas em 2026-11-17 (itens 2, 4, 5 e 6) e **pendentes** (1 e 3):
+
+1. **Onde mora o projeto e como se chama?** *Decidido de fato*: repositório privado `MarceloVilela/microservices-go` (pasta `projects-ia/microservices-go`). O v1 fica **intocado**, como oráculo.
+2. **O `ms-notification` entra?** **Sim, como serviço próprio** (Fase 5).
+3. **Banco**: Postgres + `sqlc` *(hipótese; ADR 0007)*. SQLite deixaria de servir ao relay do outbox (`SKIP LOCKED`).
+4. **Loggly**: **descartado** (o v1 nunca confirmou eventos lá). Em troca, a notificação ganha a abstração `Notifier` (ADR 0020) com `slog` como padrão e e-mail via SMTP (Mailpit no desenvolvimento) como destino opcional.
+5. **Frontend**: **repositório separado** (`projects-ia/microservices-frontend-angular`, portfólio Angular isolado). Consequência: o **G5** passa a cruzar dois repositórios (o contrato é publicado aqui e o cliente é gerado lá; ADR 0019).
+6. **`ms-api` separado do `ms-ingest`**: **sim**.
 
 ## Ordem de execução resumida
 
@@ -352,5 +354,5 @@ Só começa com a Fase 7 mergeada. Fica em diretório próprio (`web/`; decisão
 
 - `projects-ia/ec-microservices-rabbitmq/specs.md` e `CLAUDE.local.md` (requisitos R1 a R8, status e code review do v1).
 - `published/php-laravel/plan.md` e `specs/adr/` (método, gates e formato de ADR).
-- `zgo.md` (decisões de escopo desta conversa) e `zangular.md` (painel Angular e `ms-api`).
+- `go101.md` (decisões de escopo desta conversa, antigo `zgo.md`) e `projects-ia/microservices-frontend-angular/docs/angular101.md` (painel Angular e `ms-api`, antigo `zangular.md`; o plano do painel é `plan-angular.md` na mesma pasta).
 - `plan-go-code-review.md` (revisão `high` deste plano e rastreio das correções).

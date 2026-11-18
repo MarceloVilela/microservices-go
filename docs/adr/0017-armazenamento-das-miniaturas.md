@@ -27,4 +27,4 @@ Querer mais de uma réplica de worker em hosts diferentes: migrar para MinIO.
 
 ## Evidência
 
-Pendente. Fase 3 (escrita atômica) e Fase 6 (`ETag`).
+Pendente. Fase 3 (escrita atômica) e Fase 6 (`ETag`). Proposta de formato no `specs/dataset-de-paridade.md`: largura de 200 px, altura proporcional arredondada (1200×800 e 600×400 viram 200×133).

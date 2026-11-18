@@ -1,0 +1,13 @@
+== A. degraus reais 5s,30s (1 mensagem)
+ladder=[5s 30s] n=1 fim na DLQ após 35.009s
+  degrau 1 (TTL 5s): reentregas=1 atraso medido p50=5.003s min=5.003s max=5.003s | janela de chegada (max-min) = 0s
+    pico: 1 reentregas em uma janela de 100 ms (de 1)
+  degrau 2 (TTL 30s): reentregas=1 atraso medido p50=30.004s min=30.004s max=30.004s | janela de chegada (max-min) = 0s
+    pico: 1 reentregas em uma janela de 100 ms (de 1)
+== B. herd: 200 mensagens, degrau único 2s
+ladder=[2s] n=200 fim na DLQ após 2.199s
+  degrau 1 (TTL 2s): reentregas=200 atraso medido p50=2.002s min=2.001s max=2.004s | janela de chegada (max-min) = 196ms
+    pico: 105 reentregas em uma janela de 100 ms (de 200)
+== C. bloqueio de cabeça de fila (TTL por mensagem)
+  mensagem 1 (TTL por mensagem 6000 ms) chegou à DLQ em 6s
+  mensagem 2 (TTL por mensagem 1000 ms) chegou à DLQ em 6s

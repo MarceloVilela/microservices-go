@@ -1,0 +1,4 @@
+FROM scratch
+COPY ctx/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY ctx/app /app
+ENTRYPOINT ["/app"]

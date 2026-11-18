@@ -1,6 +1,6 @@
 # ADR 0003: Cliente AMQP e reconexão
 
-- **Status:** proposta
+- **Status:** aceita (aprovada pelo usuário em 2026-11-17)
 - **Data:** 2026-11-17
 - **Origem no plano:** D2 (`docs/plan-go.md`)
 
@@ -27,4 +27,4 @@ Biblioteca descontinuada ou bug bloqueante no spike.
 
 ## Evidência
 
-Pendente. S1 (confirms e reconexão com RabbitMQ 4; 1.000 publicações com latência medida).
+Parcial. **S1 executado em 2026-11-17** (`specs/spikes/s1-amqp.md`): reconexão com backoff após `docker restart` do broker funcionou (200 confirmadas, 1 reenvio, 7 tentativas de conexão). Só broker reiniciado, fila clássica, uma execução, com um protótipo de spike (não o código de `platform`). O critério de reversão não foi acionado. **Fica para a Fase 4:** reconexão do **consumidor** (consumers reabertos, mensagens em voo reentregues) e queda só do canal, como critério de aceite.

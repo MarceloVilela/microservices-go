@@ -1,0 +1,3 @@
+FROM scratch
+COPY ctx/app /app
+ENTRYPOINT ["/app"]

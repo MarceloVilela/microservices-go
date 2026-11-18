@@ -1,0 +1,19 @@
+== latency
+sequencial: n=1000 total=507ms throughput=1973/s p50=429.801µs p95=796.482µs p99=1.707187ms max=8.012038ms
+em lote:    n=1000 total=32ms throughput=31196/s
+exit=0
+Timeout: 60.0 seconds ...
+Listing queues for vhost / ...
+name	messages_ready
+s1.photo.process	2000
+== reconnect (restart do broker em ~5s)
+  conectado (tentativa 1)
+  falha (Exception (504) Reason: "channel/connection is not open"); reconectando
+  [restart do broker concluído]
+  conectado (tentativa 7)
+reconnect: confirmadas=200 reenvios=1 duração=29.385s
+exit=0
+Timeout: 60.0 seconds ...
+Listing queues for vhost / ...
+name	messages_ready
+s1.photo.process	2200

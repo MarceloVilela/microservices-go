@@ -1,0 +1,68 @@
+=== RUN   TestRelayDuasInstancias
+2026/11/17 16:37:55 github.com/testcontainers/testcontainers-go - Connected to docker: 
+  Server Version: 29.9.3
+  API Version: 1.56
+  Operating System: Ubuntu 24.04.5 LTS
+  Total Memory: 19887 MB
+  Testcontainers for Go Version: v0.45.0
+  Resolved Docker Host: unix:///var/run/docker.sock
+  Resolved Docker Socket Path: /var/run/docker.sock
+  Test SessionID: 6dbc3322a74db1a54e5db2c9327c6f6da30ca92d6306bb045d2ffb7b0a39ce57
+  Test ProcessID: 6fdbaffe-b8b2-4f33-ace2-613f69e08137
+2026/11/17 16:37:55 🐳 Creating container for image postgres:18-alpine
+2026/11/17 16:37:56 🐳 Creating container for image testcontainers/ryuk:0.14.0
+2026/11/17 16:37:56 ✅ Container created: e67b52de0b13
+2026/11/17 16:37:56 🐳 Starting container: e67b52de0b13
+2026/11/17 16:37:57 ✅ Container started: e67b52de0b13
+2026/11/17 16:37:57 ⏳ Waiting for container id e67b52de0b13 image: testcontainers/ryuk:0.14.0. Waiting for: all of: [log message "Started", port 8080/tcp to be listening]
+2026/11/17 16:37:57 Shell not found in container
+2026/11/17 16:37:57 🔔 Container is ready: e67b52de0b13
+2026/11/17 16:37:57 ✅ Container created: 7210153aeab2
+2026/11/17 16:37:57 🐳 Starting container: 7210153aeab2
+2026/11/17 16:37:57 ✅ Container started: 7210153aeab2
+2026/11/17 16:37:57 ⏳ Waiting for container id 7210153aeab2 image: postgres:18-alpine. Waiting for: all of: [log message "database system is ready to accept connections" (occurrence: 2), port 5432/tcp to be listening]
+2026/11/17 16:38:03 🔔 Container is ready: 7210153aeab2
+2026/11/17 16:38:03 🐳 Creating container for image rabbitmq:4-management-alpine
+2026/11/17 16:38:03 ✅ Container created: 8d73aefe7867
+2026/11/17 16:38:03 🐳 Starting container: 8d73aefe7867
+2026/11/17 16:38:03 ✅ Container started: 8d73aefe7867
+2026/11/17 16:38:03 ⏳ Waiting for container id 8d73aefe7867 image: rabbitmq:4-management-alpine. Waiting for: all of: [log pattern ".*Server startup complete.*"]
+2026/11/17 16:38:11 🔔 Container is ready: 8d73aefe7867
+    s4_test.go:210: subida: postgres=7.554s rabbitmq=7.944s
+    s4_test.go:238: 2 relays (lote 20): A=580 B=420, ids distintos na fila=1000, mensagens=1000, duplicatas=0, sem published_at=0, duração=131ms
+2026/11/17 16:38:11 🐳 Stopping container: 8d73aefe7867
+2026/11/17 16:38:13 ✅ Container stopped: 8d73aefe7867
+2026/11/17 16:38:13 🐳 Terminating container: 8d73aefe7867
+2026/11/17 16:38:13 🚫 Container terminated: 8d73aefe7867
+2026/11/17 16:38:13 🐳 Stopping container: 7210153aeab2
+2026/11/17 16:38:13 ✅ Container stopped: 7210153aeab2
+2026/11/17 16:38:13 🐳 Terminating container: 7210153aeab2
+2026/11/17 16:38:14 🚫 Container terminated: 7210153aeab2
+--- PASS: TestRelayDuasInstancias (18.46s)
+=== RUN   TestRelayQuedaEntreConfirmEMarca
+2026/11/17 16:38:14 🐳 Creating container for image postgres:18-alpine
+2026/11/17 16:38:14 ✅ Container created: ce1d19afd46f
+2026/11/17 16:38:14 🐳 Starting container: ce1d19afd46f
+2026/11/17 16:38:15 ✅ Container started: ce1d19afd46f
+2026/11/17 16:38:15 ⏳ Waiting for container id ce1d19afd46f image: postgres:18-alpine. Waiting for: all of: [log message "database system is ready to accept connections" (occurrence: 2), port 5432/tcp to be listening]
+2026/11/17 16:38:19 🔔 Container is ready: ce1d19afd46f
+2026/11/17 16:38:19 🐳 Creating container for image rabbitmq:4-management-alpine
+2026/11/17 16:38:19 ✅ Container created: df1f57983b68
+2026/11/17 16:38:19 🐳 Starting container: df1f57983b68
+2026/11/17 16:38:20 ✅ Container started: df1f57983b68
+2026/11/17 16:38:20 ⏳ Waiting for container id df1f57983b68 image: rabbitmq:4-management-alpine. Waiting for: all of: [log pattern ".*Server startup complete.*"]
+2026/11/17 16:38:25 🔔 Container is ready: df1f57983b68
+    s4_test.go:251: subida: postgres=5.46s rabbitmq=6.314s
+    s4_test.go:273: enquanto A segura 50 linhas: B publicou 150 (nenhuma das travadas)
+    s4_test.go:286: depois da queda de A: ids distintos=200 de 200, mensagens=250, duplicatas=50 (esperado 50)
+2026/11/17 16:38:26 🐳 Stopping container: df1f57983b68
+2026/11/17 16:38:28 ✅ Container stopped: df1f57983b68
+2026/11/17 16:38:28 🐳 Terminating container: df1f57983b68
+2026/11/17 16:38:28 🚫 Container terminated: df1f57983b68
+2026/11/17 16:38:28 🐳 Stopping container: ce1d19afd46f
+2026/11/17 16:38:28 ✅ Container stopped: ce1d19afd46f
+2026/11/17 16:38:28 🐳 Terminating container: ce1d19afd46f
+2026/11/17 16:38:28 🚫 Container terminated: ce1d19afd46f
+--- PASS: TestRelayQuedaEntreConfirmEMarca (14.82s)
+PASS
+ok  	spike/s4	34.441s

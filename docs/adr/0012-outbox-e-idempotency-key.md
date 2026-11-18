@@ -1,12 +1,12 @@
 # ADR 0012: Outbox e Idempotency-Key do POST /batches
 
-- **Status:** proposta
+- **Status:** aceita (aprovada pelo usuário em 2026-11-18); broker fora do ar e `Idempotency-Key` são critério de aceite da Fase 2
 - **Data:** 2026-11-17
 - **Origem no plano:** RQ1, RQ2, N1 (`docs/plan-go.md`)
 
 ## Contexto
 
-Gravar no Postgres e depois publicar no broker, sem outbox, deixa estado inconsistente numa falha no meio (ex.: 20 de 50 publicados e a API responde 503; repetir o `POST` cria segundo lote).
+Gravar no Postgres e depois publicar no broker, sem outbox, deixa estado inconsistente numa falha no meio. Exemplo **hipotético** (vem do code review do plano, não foi observado no v1): 20 de 50 publicados e a API responde 503; repetir o `POST` cria segundo lote. No v1, com o broker parado desde o início, a transação **não** é gravada (a conexão abre no construtor, antes do `persist`; ver A2 em `specs/auditoria-v1.md`); a inconsistência existe se o broker cair entre a gravação e a publicação, ou se a publicação falhar depois do `persist`.
 
 ## Decisão
 
@@ -28,4 +28,4 @@ Se esta ADR for rejeitada, a Fase 2 precisa de outra resposta para o `503` parci
 
 ## Evidência
 
-Pendente. S4 (duas instâncias do relay) e os testes de integração da Fase 2.
+**S4 executado em 2026-11-17** (`specs/spikes/s4-testcontainers.md`): duas instâncias do relay dividiram 1.000 linhas (580 e 420) sem perda nem duplicata; o relay pulou as 50 linhas travadas por outra instância; a queda entre o confirm e o commit duplica (50 de 200) sem perder nenhuma, o que confirma a publicação *at-least-once*. **S1** mediu o confirm: p50 de 0,42 ms em fila clássica. Limites: as instâncias eram goroutines do mesmo processo e a queda foi simulada com rollback. **Fica para a Fase 2 (critério de aceite):** `POST` responde `202` com o broker parado, as linhas ficam no outbox e `/readyz` falha; ao voltar, o relay publica todas as pendentes; `Idempotency-Key` repetida não cria segundo lote.
