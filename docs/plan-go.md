@@ -21,8 +21,8 @@
 
 | Fase | Nome | Tamanho | Status |
 |---|---|---|---|
-| 0 | Auditoria do v1, spec, ADRs e spikes | M | **G0 fechado em 2026-11-18**; PR pendente (a pedido) |
-| 1 | Esqueleto: monorepo Go, Docker, CI, lint e topologia do broker | M | pendente |
+| 0 | Auditoria do v1, spec, ADRs e spikes | M | **G0 fechado em 2026-11-18**; PR #1 mergeado |
+| 1 | Esqueleto: monorepo Go, Docker, CI, lint e topologia do broker | M | **implementada em 2026-11-18, aceite verde**; PR pendente (a pedido); `specs/fase-1-esqueleto.md` |
 | 2 | `ms-ingest`: API HTTP, outbox e publicação com confirmação | M | pendente |
 | 3 | `ms-worker`: consumo, download, miniatura, ack manual, idempotência e fim de lote | L | pendente |
 | 4 | Resiliência: retry com backoff, DLQ, reconexão e shutdown gracioso | L | pendente |
@@ -53,12 +53,12 @@ As três pendências do v1 viram **requisitos de primeira classe** no Go (ver se
 
 | # | Decisão (Go) | v1 | Por que mudar | O que invalidaria |
 |---|---|---|---|---|
-| D1 | **Go** (versão estável vigente, fixada na ADR), um módulo por serviço com `go.work` e um módulo `platform` compartilhado *(hipótese; ADR 0015)* | PHP 8.4 + Lumen 10 (descontinuado) | Lumen está em fim de vida; Go é a stack comum para consumers concorrentes e binários pequenos | Spike mostrar fricção que não compense |
+| D1 | **Go** (versão estável vigente, fixada na ADR), um módulo por serviço com `go.work` e um módulo `platform` compartilhado (**ADR 0002 e 0015, aceitas em 2026-11-18**, Go 1.27.4 fixado na Fase 1) | PHP 8.4 + Lumen 10 (descontinuado) | Lumen está em fim de vida; Go é a stack comum para consumers concorrentes e binários pequenos | Spike mostrar fricção que não compense |
 | D2 | **Cliente `amqp091-go`** com camada própria de reconexão | `php-amqplib`, sem reconexão | Biblioteca oficial do RabbitMQ para Go; a reconexão é responsabilidade do chamador, então precisa de código e de teste | Biblioteca descontinuada ou bug bloqueante no spike |
 | D3 | **Ack manual**, mensagem **persistente**, **publisher confirms** | `no_ack=true`, não persistente, sem confirmação | Corrige as pendências do v1; é o que torna R5 verdadeiro com o broker reiniciando | Custo de latência inaceitável no spike |
 | D4 | **Retry por degraus**: uma fila de retry por degrau (5 s, 30 s, 2 min, 5 min), cada uma com **TTL fixo** (sem bloqueio de cabeça de fila) e DLX de volta; depois **DLQ**. `Retry-After` é arredondado **para cima** ao degrau mais próximo. **Sem jitter** nesse mecanismo (assumido; herd medido no S2). **Decidido pelo usuário em 2026-11-17** (ADR 0005), comparando com o retry nativo da quorum queue | sem retry | Escada exata (5,003 s e 30,004 s medidos), `Retry-After` por degrau, fila clássica (confirm p50 0,42 ms) | O herd causar `429` no Picsum na carga da Fase 7, ou a escada ficar cara de manter: ADR 0005 troca pelo retry nativo da quorum queue (S2) ou por retry no Postgres (`next_attempt_at` com jitter, aproveitando o relay do outbox) |
 | D5 | **PostgreSQL** + `pgx` + `sqlc` *(hipótese)* | MySQL 8.4 + Eloquent | SQL tipado e gerado, sem ORM; `SELECT ... FOR UPDATE SKIP LOCKED` para o relay do outbox (SQLite não tem) | `database/sql` puro bastar para o volume do projeto. **Não** é justificativa que Postgres seja melhor no `testcontainers-go`: há módulo oficial para os dois, e essa afirmação saiu do plano |
-| D6 | **Estrutura por serviço**: `cmd/`, `internal/{domain,app,adapters}`; broker atrás de uma interface pequena definida **no consumidor** | `BrokerInterface` + provider | Idiomático em Go; interface no lado de quem usa, não de quem implementa | Cerimônia sem valor (revisitar na Fase 1) |
+| D6 | **Estrutura por serviço**: `cmd/`, `internal/{domain,app,adapters}`; broker atrás de uma interface pequena definida **no consumidor** | `BrokerInterface` + provider | Idiomático em Go; interface no lado de quem usa, não de quem implementa | Cerimônia sem valor. **Revisitado na Fase 1 (F1-7):** `internal/{domain,app,adapters}` só nasce com o primeiro código (Fase 2); a Fase 1 tem só `cmd/` |
 
 **Sobre o retry (D4, decidido em 2026-11-17)**: o S2 (`specs/spikes/s2-retry.md`) mediu a escada TTL + DLX
 (5,003 s e 30,004 s) e o retry nativo da quorum queue (linear, `min × contagem`). O usuário escolheu a **escada**; a

@@ -3,8 +3,10 @@
 Pipeline de processamento de fotos em microsserviços **Go**, sobre **RabbitMQ 4** e **PostgreSQL**, com painel
 **Angular** opcional que mostra a fila ao vivo.
 
-> **Status: planejamento.** Não há código ainda, só a documentação em [`docs/`](docs). O plano é um rascunho para
-> aprovação; nada abaixo está implementado nem medido.
+> **Status: Fase 1 (esqueleto) implementada.** Há monorepo Go, Docker, CI e a topologia do broker; os serviços ainda só
+> expõem `/healthz` e `/readyz`, sem regra de negócio. O plano continua sendo um rascunho para aprovação.
+>
+> Subir: `./run.sh` (RabbitMQ, `topology-init` e os 4 serviços); verificar: `make check`, `make integration`, `make accept`.
 
 ## O que é
 
@@ -39,8 +41,8 @@ Serviços não importam uns aos outros. Diagrama e detalhes na seção 6 de [`do
 
 | Fase | Tema | Status |
 |---|---|---|
-| 0 | Auditoria do v1, spec, ADRs e spikes | G0 fechado; PR pendente |
-| 1 | Esqueleto: monorepo, Docker, CI, lint e topologia do broker | pendente |
+| 0 | Auditoria do v1, spec, ADRs e spikes | G0 fechado; mergeada |
+| 1 | Esqueleto: monorepo, Docker, CI, lint e topologia do broker | implementada; PR pendente |
 | 2 | `ms-ingest`: API, outbox e publicação com confirmação | pendente |
 | 3 | `ms-worker`: consumo, miniatura, idempotência e fim de lote | pendente |
 | 4 | Resiliência: retry, DLQ, reconexão e shutdown | pendente |
@@ -57,8 +59,8 @@ O backend (fases 0 a 7) fecha sem o painel.
 - [`docs/plan-go.md`](docs/plan-go.md): plano spec-driven completo (requisitos, gates, arquitetura, fases, riscos).
 - [`docs/plan-go-code-review.md`](docs/plan-go-code-review.md): revisão do plano e rastreio das correções.
 - [`docs/go101.md`](docs/go101.md): como o projeto foi escolhido.
-- [`docs/adr/`](docs/adr): 20 ADRs; 8 aceitas e 12 `proposta` até as fases correspondentes (nenhuma é aceita sem evidência e aprovação).
-- [`specs/`](specs): entregáveis da Fase 0 (auditoria do v1, oráculo, dataset, spikes).
+- [`docs/adr/`](docs/adr): 20 ADRs; 10 aceitas e 10 `proposta` até as fases correspondentes (nenhuma é aceita sem evidência e aprovação).
+- [`specs/`](specs): entregáveis das Fases 0 e 1 (auditoria do v1, oráculo, dataset, spikes, esqueleto).
 
 ## Metodologia
 

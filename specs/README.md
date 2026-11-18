@@ -12,5 +12,7 @@ Entregáveis das fases do plano (`docs/plan-go.md`). As ADRs ficam em `docs/adr/
 | `dataset-server/` | servidor local de teste dos casos 9 e 10 e do `Retry-After` | 0 |
 | `spikes/` | S1 a S5: documento, código e saída bruta de cada um | 0 |
 | `execucao-fase-0.log` | registro de execução e correções da fase | 0 |
+| `fase-1-esqueleto.md` | spec da Fase 1: decisões F1-1 a F1-9, topologia, variáveis, aceite, limites | 1 |
+| `execucao-fase-1.log` | evidência: `make check`, integração, aceite e container limpo | 1 |
 
-Padrões futuros (ainda não existem): `fase-N-nome.md`, `execucao-fase-N.log`, `events.schema.json` e `acceptance/*.http`.
+Padrões futuros (ainda não existem): `events.schema.json` e `acceptance/*.http`; `fase-N-nome.md` e `execucao-fase-N.log` seguem o mesmo padrão nas próximas fases.

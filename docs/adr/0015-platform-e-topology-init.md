@@ -1,6 +1,6 @@
 # ADR 0015: Código compartilhado (platform) e dono único da topologia
 
-- **Status:** proposta
+- **Status:** aceita (aprovada pelo usuário em 2026-11-18, com a evidência da Fase 1)
 - **Data:** 2026-11-17
 - **Origem no plano:** D1, G4, Fase 1 (`docs/plan-go.md`)
 
@@ -27,4 +27,7 @@ Se `platform` crescer além do núcleo listado, dividir ou duplicar o excedente.
 
 ## Evidência
 
-Pendente. Fase 1: serviço com topologia divergente falha o `/readyz` em vez de recriá-la.
+Fase 1 (2026-11-18, `specs/execucao-fase-1.log`): `topology-init` declara exchange + 7 filas (conferido pela API de gerenciamento) e é idempotente;
+apagada a DLQ, `ms-api` e `ms-worker` dão `/readyz` 503, `ms-ingest` e `ms-notification` (que não a exigem) seguem 200, e a fila **continua ausente**
+até o `topology-init` rodar de novo. `archtest` garante que só `ms-queues` e `platform/amqpx` chamam `ExchangeDeclare`/`QueueDeclare`/`QueueBind`.
+**Limite:** a verificação passiva só detecta ausência, não argumentos divergentes (esses falham no `topology-init`).

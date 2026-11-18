@@ -1,0 +1,43 @@
+name: ms-queues
+
+services:
+  ms-queues:
+    container_name: ms-queues
+    image: rabbitmq:4-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?rode ./run.sh, que gera o .env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:?rode ./run.sh, que gera o .env}
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
+    # 1ª partida pode cair com eacces no .erlang.cookie (specs/spikes/s1-amqp.md)
+    restart: on-failure:3
+    networks: [ms-go-network]
+
+  # Execução única, chamada pelo run.sh (docker compose run --rm topology-init).
+  # É o único serviço que declara a topologia (ADR 0015).
+  topology-init:
+    profiles: [init]
+    container_name: topology-init
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: final-job
+      args:
+        PKG: ./ms-queues/cmd/topology-init
+    environment:
+      AMQP_URL: amqp://${RABBITMQ_USER:?}:${RABBITMQ_PASS:?}@ms-queues:5672/
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [ms-go-network]
+
+networks:
+  ms-go-network:
+    external: true
