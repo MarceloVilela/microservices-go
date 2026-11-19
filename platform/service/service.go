@@ -18,6 +18,7 @@ import (
 	"github.com/MarceloVilela/microservices-go/platform/config"
 	"github.com/MarceloVilela/microservices-go/platform/health"
 	"github.com/MarceloVilela/microservices-go/platform/logging"
+	"github.com/MarceloVilela/microservices-go/platform/metrics"
 )
 
 // Spec descreve um serviço.
@@ -30,6 +31,9 @@ type Spec struct {
 	ExtraVars []config.Var
 	// Setup monta as dependências do serviço (banco, rotas, tarefas). Opcional.
 	Setup func(ctx context.Context, vals config.Values, log *slog.Logger) (*Runtime, error)
+	// Metrics, se presente, expõe GET /metrics (sem Bearer, como /healthz) e mede cada
+	// requisição HTTP. O Setup do serviço registra aqui as métricas próprias.
+	Metrics *metrics.Registry
 	// Verifier substitui a verificação padrão (usado em testes).
 	Verifier func(ctx context.Context, amqpURL string) error
 }
@@ -217,9 +221,14 @@ func serve(ctx context.Context, spec Spec, environ []string, stderr io.Writer) i
 	if rt.Mount != nil {
 		rt.Mount(mux)
 	}
+	var handler http.Handler = mux
+	if spec.Metrics != nil {
+		mux.Handle("GET /metrics", spec.Metrics.Handler())
+		handler = spec.Metrics.Middleware(mux)
+	}
 	srv := &http.Server{
 		Addr:              vals.String("HTTP_ADDR"),
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		// o corpo do POST /batches tem no máximo 1 MiB; clientes lentos não podem prender conexões
 		ReadTimeout:  15 * time.Second,

@@ -107,12 +107,16 @@ func (s Store) Photos(ctx context.Context, f app.PhotoFilter, after *app.Cursor,
 	return scanPhotos(rows)
 }
 
-// DLQ lista as fotos `failed` por finished_at desc, id desc (a causa vem em failure_*).
+// inDLQ é o critério de "está na DLQ": foto `failed`, ou `pending` parada por infraestrutura
+// esgotada (o worker grava failure_class e finished_at, F7-5).
+const inDLQ = `(p.status = 'failed' OR (p.status = 'pending' AND p.failure_class = 'infrastructure'))`
+
+// DLQ lista as fotos na DLQ (ver inDLQ) por finished_at desc, id desc (a causa vem em failure_*).
 func (s Store) DLQ(ctx context.Context, after *app.Cursor, limit int) ([]app.Photo, error) {
 	t, id := cursorArgs(after)
 	rows, err := s.Pool.Query(ctx, `
 		SELECT `+photoCols+` FROM photos p
-		WHERE p.status = 'failed'
+		WHERE `+inDLQ+`
 		  AND ($1::timestamptz IS NULL OR (p.finished_at, p.id) < ($1::timestamptz, $2::uuid))
 		ORDER BY p.finished_at DESC, p.id DESC
 		LIMIT $3`, t, id, limit)
@@ -122,7 +126,7 @@ func (s Store) DLQ(ctx context.Context, after *app.Cursor, limit int) ([]app.Pho
 	return scanPhotos(rows)
 }
 
-// Retry reabre uma foto `failed` (ADR 0018): volta a `pending`, grava o photo.process no outbox e o
+// Retry reabre uma foto na DLQ (ADR 0018; `failed` ou `pending` parada por infraestrutura, F7-7): volta a `pending`, grava o photo.process no outbox e o
 // evento `photo.retried`, tudo na mesma transação. O lote não é tocado (completed_count e
 // batch.completed ficam como estão; o worker só conta o lote na 1ª finalização da foto).
 func (s Store) Retry(ctx context.Context, photoID string) (app.RetryResult, error) {
@@ -134,8 +138,8 @@ func (s Store) Retry(ctx context.Context, photoID string) (app.RetryResult, erro
 
 	var batchID, sourceURL string
 	err = tx.QueryRow(ctx, `
-		UPDATE photos SET status = 'pending', failure_class = NULL, failure_reason = NULL, finished_at = NULL
-		WHERE id = $1 AND status = 'failed' RETURNING batch_id, source_url`, photoID).Scan(&batchID, &sourceURL)
+		UPDATE photos p SET status = 'pending', failure_class = NULL, failure_reason = NULL, finished_at = NULL
+		WHERE p.id = $1 AND `+inDLQ+` RETURNING batch_id, source_url`, photoID).Scan(&batchID, &sourceURL)
 	if errors.Is(err, pgx.ErrNoRows) {
 		var exists bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM photos WHERE id = $1)`, photoID).Scan(&exists); err != nil {
@@ -166,6 +170,29 @@ func (s Store) Retry(ctx context.Context, photoID string) (app.RetryResult, erro
 		return 0, fmt.Errorf("commit: %w", err)
 	}
 	return app.Reopened, nil
+}
+
+// PhotoCounts conta as fotos por status (métrica photos_by_status). "stalled" é o subconjunto de
+// `pending` parado na DLQ por infraestrutura (F7-5). Varre a tabela: quem chama deve cachear.
+func (s Store) PhotoCounts(ctx context.Context) (map[string]float64, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT status, count(*), count(*) FILTER (WHERE status = 'pending' AND failure_class = 'infrastructure')
+		FROM photos GROUP BY status`)
+	if err != nil {
+		return nil, fmt.Errorf("contar fotos por status: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]float64{"pending": 0, "done": 0, "failed": 0, "stalled": 0}
+	for rows.Next() {
+		var st string
+		var n, stalled int64
+		if err := rows.Scan(&st, &n, &stalled); err != nil {
+			return nil, fmt.Errorf("ler contagem: %w", err)
+		}
+		out[st] = float64(n)
+		out["stalled"] += float64(stalled)
+	}
+	return out, rows.Err()
 }
 
 // Bounds devolve o menor e o maior seq retidos; (0, 0) com o log vazio.

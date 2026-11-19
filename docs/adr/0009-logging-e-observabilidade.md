@@ -27,4 +27,4 @@ Se passar a existir necessidade de log centralizado, reabrir com nova ADR.
 
 ## Evidência
 
-Pendente. Fase 7 (métricas); o isolamento de falha de destino é coberto pela ADR 0020.
+**Fase 7 (2026-11-18):** `platform/metrics` (registro Prometheus próprio por serviço, `GET /metrics` sem Bearer, rótulo `route` = padrão do `ServeMux`, nunca o caminho cru; teste e aceite provam que nenhum UUID vira rótulo). Métricas: `photos_processed_total{outcome}` e `photo_process_seconds{outcome}` (worker), `queue_messages{queue}` (declaração passiva com cache de 5 s; broker fora ⇒ a métrica some e o scrape segue 200), `outbox_pending`/`outbox_quarantined`/`outbox_oldest_pending_age_seconds` (ingest), `photos_by_status{status}`, `sse_clients`, `sse_last_seq` (api), `notifications_total{outcome}`. Dependência nova só em `platform/` e nos `main`: `client_golang`. Faltam alertas e dashboards (fora do escopo). O isolamento de falha de destino é coberto pela ADR 0020. **Segue `proposta`** até a aprovação.

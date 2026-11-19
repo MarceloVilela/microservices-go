@@ -6,14 +6,14 @@ MODULES := platform ms-ingest ms-worker ms-notification ms-api ms-queues archtes
 TEST_MODULES := $(filter-out archtest,$(MODULES))
 SERVICES := ms-ingest ms-worker ms-notification ms-api
 
-.PHONY: build vet test lint vuln arch integration check images accept tidy
+.PHONY: build vet test lint vuln arch integration check images accept tidy load
 
 build:
 	@for m in $(MODULES) tests; do (cd $$m && $(GO) build -o /dev/null ./...) || exit 1; done
 
 vet:
 	@for m in $(MODULES); do (cd $$m && $(GO) vet ./...) || exit 1; done
-	@(cd tests && $(GO) vet -tags integration ./...)
+	@(cd tests && $(GO) vet -tags "integration load" ./...)
 	@(cd ms-worker && $(GO) vet -tags faultinject ./...)
 
 test:
@@ -23,7 +23,7 @@ arch:
 	@cd archtest && $(GO) test -count=1 ./...
 
 lint:
-	@for m in $(MODULES) tests; do (cd $$m && golangci-lint run --build-tags integration,faultinject ./...) || exit 1; done
+	@for m in $(MODULES) tests; do (cd $$m && golangci-lint run --build-tags integration,load,faultinject ./...) || exit 1; done
 
 vuln:
 	@for m in $(MODULES) tests; do (cd $$m && govulncheck ./...) || exit 1; done
@@ -41,6 +41,10 @@ tidy:
 	@for m in $(MODULES) tests; do (cd $$m && $(GO) mod tidy) || exit 1; done
 	@$(GO) work sync
 
+# G2 (Fase 7): carga com números reais; demora, por isso fora do accept
+load:
+	@scripts/carga-fase-7.sh
+
 # Definição de pronto da fase: tudo com saída 0 (conferir "echo $$?" sem pipe)
 check: build vet test arch lint vuln
 
@@ -51,3 +55,4 @@ accept:
 	@scripts/aceite-fase-4.sh
 	@scripts/aceite-fase-5.sh
 	@scripts/aceite-fase-6.sh
+	@scripts/aceite-fase-7.sh

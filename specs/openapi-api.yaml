@@ -72,21 +72,26 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
   /dlq:
     get:
-      summary: Fotos com falha (status failed) e a causa, da mais recente para a mais antiga
+      summary: Fotos na DLQ e a causa, da mais recente para a mais antiga
+      description: |
+        Lista a foto `failed` e também a foto `pending` parada por infraestrutura esgotada
+        (`failure_class: infrastructure`; Fase 7). Nesta última, `finished_at` é o momento em que foi à DLQ.
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
       responses:
-        '200': { description: Página de fotos failed, content: { application/json: { schema: { $ref: '#/components/schemas/PhotoPage' } } } }
+        '200': { description: Página de fotos na DLQ (failed, ou pending parada por infraestrutura), content: { application/json: { schema: { $ref: '#/components/schemas/PhotoPage' } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
   /dlq/{id}/retry:
     post:
-      summary: Reabre uma foto failed (pending + novo outbox + evento photo.retried)
+      summary: Reabre uma foto da DLQ (pending + novo outbox + evento photo.retried)
       description: |
-        Só reabre foto `failed`. O lote não é tocado: `completed_count` não muda e `batch.completed` não é
-        reemitido (ADR 0018). Foto `pending` ou `done`: 409 `photo_not_failed`, sem efeito.
+        Reabre foto `failed` ou foto `pending` parada na DLQ por infraestrutura (Fase 7). O lote não é tocado
+        na `failed`: `completed_count` não muda e `batch.completed` não é reemitido (ADR 0018); a `pending`
+        parada nunca foi contada e conta uma vez quando terminar. Outra foto `pending` ou `done`: 409
+        `photo_not_failed`, sem efeito.
       parameters:
         - $ref: '#/components/parameters/ID'
       responses:

@@ -30,7 +30,7 @@ type Reader interface {
 	Batches(ctx context.Context, after *app.Cursor, limit int) ([]app.Batch, error)
 	Batch(ctx context.Context, id string) (app.Batch, error)
 	Photos(ctx context.Context, f app.PhotoFilter, after *app.Cursor, limit int) ([]app.Photo, error)
-	// DLQ lista as fotos `failed` por finished_at decrescente.
+	// DLQ lista as fotos na DLQ (`failed`, ou `pending` parada por infraestrutura) por finished_at decrescente.
 	DLQ(ctx context.Context, after *app.Cursor, limit int) ([]app.Photo, error)
 	Retry(ctx context.Context, photoID string) (app.RetryResult, error)
 }
@@ -200,7 +200,7 @@ func (h Handler) retry(w http.ResponseWriter, r *http.Request) {
 	case res == app.NotFound:
 		httpx.Problem(w, http.StatusNotFound, "photo_not_found", "foto não encontrada")
 	case res == app.NotFailed:
-		httpx.Problem(w, http.StatusConflict, "photo_not_failed", "só foto com status failed pode ser reprocessada")
+		httpx.Problem(w, http.StatusConflict, "photo_not_failed", "só foto na DLQ (failed, ou pending parada por infraestrutura) pode ser reprocessada")
 	default:
 		writeJSON(w, http.StatusAccepted, map[string]string{"photo_id": id, "status": "pending"})
 	}

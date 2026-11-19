@@ -21,6 +21,7 @@ import (
 	"github.com/MarceloVilela/microservices-go/platform/config"
 	"github.com/MarceloVilela/microservices-go/platform/db"
 	"github.com/MarceloVilela/microservices-go/platform/httpx"
+	"github.com/MarceloVilela/microservices-go/platform/metrics"
 	"github.com/MarceloVilela/microservices-go/platform/service"
 	"github.com/MarceloVilela/microservices-go/platform/topology"
 )
@@ -32,7 +33,9 @@ func main() {
 }
 
 func spec() service.Spec {
+	reg := metrics.NewRegistry()
 	return service.Spec{
+		Metrics:     reg,
 		Name:        "ms-api",
 		DefaultAddr: ":8082",
 		Require:     amqpx.Requirement{Queues: []topology.Queue{topology.PhotoDLQ}},
@@ -46,11 +49,13 @@ func spec() service.Spec {
 			{Name: "SSE_WRITE_TIMEOUT", Default: "5s", Validate: config.ValidDuration},
 			{Name: "EVENTS_RETENTION", Default: "24h", Validate: config.ValidDuration},
 		},
-		Setup: setup,
+		Setup: func(ctx context.Context, vals config.Values, log *slog.Logger) (*service.Runtime, error) {
+			return setup(ctx, vals, log, reg)
+		},
 	}
 }
 
-func setup(ctx context.Context, vals config.Values, log *slog.Logger) (*service.Runtime, error) {
+func setup(ctx context.Context, vals config.Values, log *slog.Logger, reg *metrics.Registry) (*service.Runtime, error) {
 	pool, err := db.Open(ctx, vals.String("DATABASE_URL"))
 	if err != nil {
 		return nil, err
@@ -70,6 +75,31 @@ func setup(ctx context.Context, vals config.Values, log *slog.Logger) (*service.
 	}
 	api := httpapi.Handler{Reader: store, Thumbs: files, Log: log}
 	retention := vals.Duration("EVENTS_RETENTION")
+
+	counts := metrics.NewCache(func() (map[string]float64, error) {
+		qctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		return store.PhotoCounts(qctx)
+	}, 5*time.Second)
+	reg.GaugeFunc("photos_by_status", "Fotos por status (pending, done, failed); sem sobreposição: some a soma.", "status",
+		metrics.NewCache(func() (map[string]float64, error) {
+			v, err := counts.Get()
+			if err != nil {
+				return nil, err
+			}
+			return map[string]float64{"pending": v["pending"], "done": v["done"], "failed": v["failed"]}, nil
+		}, 0)) // ttl 0: só recorta o mapa de counts, que já é cacheado
+	reg.Gauge("photos_stalled", "Fotos pending paradas na DLQ por infraestrutura esgotada (subconjunto de pending).", func() (float64, error) {
+		v, err := counts.Get()
+		return v["stalled"], err
+	})
+	reg.Gauge("sse_clients", "Clientes SSE conectados.", func() (float64, error) { return float64(events.Clients()), nil })
+	reg.Gauge("sse_last_seq", "Maior seq do log de eventos.", func() (float64, error) {
+		qctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		_, hi, err := store.Bounds(qctx)
+		return float64(hi), err
+	})
 
 	return &service.Runtime{
 		Mount: func(mux *http.ServeMux) {

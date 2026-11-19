@@ -2,7 +2,7 @@
 
 Decisões de arquitetura do projeto. Formato: Status, Contexto, Decisão, Alternativas, Custo, Critério de reversão e Evidência.
 
-**Estado em 2026-11-18:** 12 aceitas (0001, 0002, 0003, 0004, 0005, 0006, 0007, 0010, 0011, 0012, 0014, 0015) e 9 `proposta`. Nenhuma vira `aceita` antes da evidência (spike medido ou teste real) e da aprovação do usuário. Por decisão do usuário, as 10 restantes **ficam `proposta` até as fases correspondentes** (tabela abaixo). O que está em Decisão nas `proposta` é hipótese de partida vinda de `docs/plan-go.md`. As ADRs são imutáveis depois de aceitas; mudar de ideia é uma ADR nova que a substitui.
+**Estado em 2026-11-19:** 12 aceitas (0001, 0002, 0003, 0004, 0005, 0006, 0007, 0010, 0011, 0012, 0014, 0015) e 10 `proposta`. Nenhuma vira `aceita` antes da evidência (spike medido ou teste real) e da aprovação do usuário. Por decisão do usuário, as 10 restantes **ficam `proposta` até as fases correspondentes** (tabela abaixo). O que está em Decisão nas `proposta` é hipótese de partida vinda de `docs/plan-go.md`. As ADRs são imutáveis depois de aceitas; mudar de ideia é uma ADR nova que a substitui.
 
 | ADR `proposta` | Revisar na | Evidência esperada |
 |---|---|---|
@@ -13,7 +13,7 @@ Decisões de arquitetura do projeto. Formato: Status, Contexto, Decisão, Altern
 | 0020 `Notifier` | Fase 5 | e-mail uma vez no Mailpit; falha de destino isolada; **evidência registrada, aguardando aprovação** |
 | 0016 SSE sobre log de eventos | Fase 6 | reconexão com `Last-Event-ID` e `LISTEN/NOTIFY`; **evidência registrada (teste e aceite 6), aguardando aprovação** |
 | 0018 CORS, autenticação do SSE e DLQ | **antes** da Fase 6 | escolhas D1 a D3 implementadas e testadas; **evidência registrada, aguardando aprovação** |
-| 0009 Logging e observabilidade | Fases 5 e 7 | `slog` com correlação; métricas |
+| 0009 Logging e observabilidade | Fases 5 e 7 | `slog` com correlação; métricas Prometheus (Fase 7 verde); **aguardando aprovação** |
 | 0019 Painel Angular | Fase 8 (opcional) | contrato publicado e consumido entre repositórios |
 
 | ADR | Tema | Status | Evidência |
@@ -26,7 +26,7 @@ Decisões de arquitetura do projeto. Formato: Status, Contexto, Decisão, Altern
 | [0006](0006-idempotencia-do-worker.md) | Idempotência do worker | **aceita** (2026-11-18) | Fase 3 |
 | [0007](0007-banco-e-acesso-a-dados.md) | Banco e acesso a dados | **aceita** (2026-11-18): Postgres + `pgx`; `sqlc` adiado | S4 |
 | [0008](0008-http.md) | HTTP: mux da stdlib ou chi | proposta (evidência da Fase 2 registrada; **aguardando aprovação**) | Fase 2 |
-| [0009](0009-logging-e-observabilidade.md) | Logging e observabilidade | proposta | pendente |
+| [0009](0009-logging-e-observabilidade.md) | Logging e observabilidade | proposta | Fase 7 (métricas, aceite 7) |
 | [0010](0010-fonte-de-fotos-allowlist-ssrf.md) | Fonte de fotos, allowlist e SSRF completa | **aceita** (2026-11-18) | S3, dataset |
 | [0011](0011-imagem-docker-final.md) | Imagem Docker final, versão do Go e healthcheck | **aceita** (2026-11-18) | S5 |
 | [0012](0012-outbox-e-idempotency-key.md) | Outbox e Idempotency-Key do POST /batches | **aceita** (2026-11-18) | S4, S1 |
@@ -39,3 +39,4 @@ Decisões de arquitetura do projeto. Formato: Status, Contexto, Decisão, Altern
 | [0019](0019-painel-angular.md) | Painel Angular | proposta | pendente |
 | [0020](0020-notificacao-notifier.md) | Notificação: interface Notifier e destinos | proposta | pendente |
 | [0021](0021-quarentena-do-outbox-e-identidade-da-mensagem.md) | Quarentena do outbox e identidade da mensagem | proposta (**aguardando aprovação**) | Fase 3 |
+| [0022](0022-foto-parada-na-dlq.md) | Foto parada na DLQ por infraestrutura esgotada | proposta (**sem decisão**; seis pontos em aberto) | Fase 7 |

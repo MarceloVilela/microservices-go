@@ -64,3 +64,25 @@ func (t pgTx) Reject(ctx context.Context, id int64, reason string, maxAttempts i
 
 func (t pgTx) Commit(ctx context.Context) error   { return t.tx.Commit(ctx) }
 func (t pgTx) Rollback(ctx context.Context) error { return t.tx.Rollback(ctx) }
+
+// Stats são os números do outbox para as métricas.
+type Stats struct {
+	Pending       float64 // não publicadas e fora da quarentena
+	Quarantined   float64 // em quarentena (parked_at), não publicadas
+	OldestSeconds float64 // idade da linha pendente mais antiga; 0 sem pendentes
+}
+
+// Stats consulta o outbox (usa o índice parcial das pendentes; a quarentena é pequena).
+// Quem chama deve cachear.
+func (s PgStore) Stats(ctx context.Context) (Stats, error) {
+	var st Stats
+	err := s.Pool.QueryRow(ctx, `SELECT
+		count(*) FILTER (WHERE parked_at IS NULL),
+		count(*) FILTER (WHERE parked_at IS NOT NULL),
+		COALESCE(EXTRACT(EPOCH FROM now() - min(created_at) FILTER (WHERE parked_at IS NULL)), 0)
+		FROM outbox WHERE published_at IS NULL`).Scan(&st.Pending, &st.Quarantined, &st.OldestSeconds)
+	if err != nil {
+		return Stats{}, fmt.Errorf("estatísticas do outbox: %w", err)
+	}
+	return st, nil
+}

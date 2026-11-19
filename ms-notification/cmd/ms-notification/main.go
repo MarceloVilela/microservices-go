@@ -22,6 +22,7 @@ import (
 	"github.com/MarceloVilela/microservices-go/platform/amqpx"
 	"github.com/MarceloVilela/microservices-go/platform/config"
 	"github.com/MarceloVilela/microservices-go/platform/db"
+	"github.com/MarceloVilela/microservices-go/platform/metrics"
 	"github.com/MarceloVilela/microservices-go/platform/service"
 	"github.com/MarceloVilela/microservices-go/platform/topology"
 )
@@ -33,7 +34,9 @@ func main() {
 }
 
 func spec() service.Spec {
+	reg := metrics.NewRegistry()
 	return service.Spec{
+		Metrics:     reg,
 		Name:        "ms-notification",
 		DefaultAddr: ":8084",
 		Require:     amqpx.Requirement{Queues: []topology.Queue{topology.BatchCompleted}},
@@ -47,7 +50,9 @@ func spec() service.Spec {
 			{Name: "SHUTDOWN_TIMEOUT", Default: "10s", Validate: config.ValidDuration},
 			{Name: "CONSUMER_BACKOFF_MAX", Default: "30s", Validate: config.ValidDuration},
 		},
-		Setup: setup,
+		Setup: func(ctx context.Context, vals config.Values, log *slog.Logger) (*service.Runtime, error) {
+			return setup(ctx, vals, log, reg)
+		},
 	}
 }
 
@@ -66,7 +71,7 @@ func notifiers(vals config.Values, log *slog.Logger) ([]app.Notifier, error) {
 	}), nil
 }
 
-func setup(ctx context.Context, vals config.Values, log *slog.Logger) (*service.Runtime, error) {
+func setup(ctx context.Context, vals config.Values, log *slog.Logger, reg *metrics.Registry) (*service.Runtime, error) {
 	ns, err := notifiers(vals, log)
 	if err != nil {
 		return nil, err
@@ -76,7 +81,7 @@ func setup(ctx context.Context, vals config.Values, log *slog.Logger) (*service.
 		return nil, err
 	}
 	// não é dono do esquema: só verifica (o ms-ingest migra; ADR 0007)
-	svc := &app.Service{Store: postgres.Store{Pool: pool}, Notifiers: ns, Log: log}
+	svc := &app.Service{Store: postgres.Store{Pool: pool}, Notifiers: ns, Log: log, Metrics: reg.Outcomes("notifications_total", "batch.completed tratados, por desfecho.")}
 	cons := &consumer.Consumer{
 		URL: vals.String("AMQP_URL"), ShutdownTimeout: vals.Duration("SHUTDOWN_TIMEOUT"), Handler: svc, Log: log,
 	}

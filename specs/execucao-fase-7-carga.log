@@ -1,0 +1,28 @@
+# carga da Fase 7 — 2026-11-18T20:32:17-03:00
+## tamanho das imagens (G2)
+ms-api-app	26.8MB
+ms-ingest-app	26.8MB
+ms-notification-app	26.7MB
+ms-queues-topology-init	16.2MB
+ms-worker-app	27MB
+## teste de carga
+    load_test.go:175: CARGA máquina: Intel(R) Core(TM) i5-8265U CPU @ 1.60GHz, 8 CPUs lógicas, go1.27.4
+    load_test.go:176: CARGA imagem de teste: 639992 bytes (JPEG 1920x1280 com ruído, q80)
+    load_test.go:167: CARGA 500 fotos, 5 lotes de 100, conc=1   500 fotos em  199.3 s =    2.5 fotos/s | worker VmHWM  32676 kB, VmRSS  27792 kB | 500 requisições ao servidor
+    load_test.go:167: CARGA 500 fotos, 5 lotes de 100, conc=4   500 fotos em   58.1 s =    8.6 fotos/s | worker VmHWM  67720 kB, VmRSS  51760 kB | 500 requisições ao servidor
+    load_test.go:167: CARGA 1 lote de 500, conc=4               500 fotos em   58.9 s =    8.5 fotos/s | worker VmHWM  66864 kB, VmRSS  44344 kB | 500 requisições ao servidor
+    load_test.go:167: CARGA 5 lotes de 100, conc=4 (repetição)  500 fotos em   57.9 s =    8.6 fotos/s | worker VmHWM  63940 kB, VmRSS  54956 kB | 500 requisições ao servidor
+    load_test.go:205: CARGA relay RELAY_BATCH_SIZE=100 2000 linhas em   1.9 s =  1034.9 msg/s
+    load_test.go:205: CARGA relay RELAY_BATCH_SIZE=500 2000 linhas em   1.4 s =  1411.0 msg/s
+    load_test.go:223: CARGA escada: 200 fotos com 2 falhas 503 cada, terminou em 60.8 s; 600 requisições ao servidor (esperado 600); pico 200 req/s, mediana dos segundos com tráfego 8 req/s; 0 fotos failed
+--- PASS: TestCarga (461.65s)
+    --- PASS: TestCarga/vazao (274.89s)
+        --- PASS: TestCarga/vazao/500_fotos,_5_lotes_de_100,_conc=1 (214.34s)
+        --- PASS: TestCarga/vazao/500_fotos,_5_lotes_de_100,_conc=4 (60.55s)
+    --- PASS: TestCarga/contencao_do_lote (118.79s)
+        --- PASS: TestCarga/contencao_do_lote/1_lote_de_500,_conc=4 (59.82s)
+        --- PASS: TestCarga/contencao_do_lote/5_lotes_de_100,_conc=4_(repetição) (58.97s)
+    --- PASS: TestCarga/relay (5.76s)
+    --- PASS: TestCarga/escada_herd (61.93s)
+PASS
+ok  	github.com/MarceloVilela/microservices-go/tests	464.604s

@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MarceloVilela/microservices-go/ms-worker/internal/app"
+	"github.com/MarceloVilela/microservices-go/ms-worker/internal/domain"
 	"github.com/MarceloVilela/microservices-go/platform/messages"
 )
 
@@ -36,6 +37,17 @@ func (s Store) Status(ctx context.Context, photoID string) (string, error) {
 		return "", fmt.Errorf("ler foto: %w", err)
 	}
 	return status, nil
+}
+
+// MarkStalled grava a causa numa foto que foi à DLQ por infraestrutura esgotada e segue pending
+// (F7-5). Só atua se ainda estiver pending; não toca o lote. finished_at marca quando ela foi
+// à DLQ (é a chave de ordem de GET /dlq no ms-api; o retry e o Finish a reescrevem).
+func (s Store) MarkStalled(ctx context.Context, photoID string, class domain.Class, reason string) error {
+	if _, err := s.Pool.Exec(ctx, `UPDATE photos SET failure_class = $2, failure_reason = $3, finished_at = now()
+		WHERE id = $1 AND status = 'pending'`, photoID, string(class), reason); err != nil {
+		return fmt.Errorf("marcar foto parada: %w", err)
+	}
+	return nil
 }
 
 // Finish é o passo 4 da ordem de operações (ADR 0006 e 0014).
