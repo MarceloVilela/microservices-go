@@ -19,12 +19,14 @@ import (
 	"github.com/MarceloVilela/microservices-go/ms-worker/internal/adapters/filestore"
 	"github.com/MarceloVilela/microservices-go/ms-worker/internal/adapters/httpfetch"
 	"github.com/MarceloVilela/microservices-go/ms-worker/internal/adapters/postgres"
+	"github.com/MarceloVilela/microservices-go/ms-worker/internal/adapters/promrec"
 	"github.com/MarceloVilela/microservices-go/ms-worker/internal/adapters/thumb"
 	"github.com/MarceloVilela/microservices-go/ms-worker/internal/app"
 	"github.com/MarceloVilela/microservices-go/ms-worker/internal/fault"
 	"github.com/MarceloVilela/microservices-go/platform/amqpx"
 	"github.com/MarceloVilela/microservices-go/platform/config"
 	"github.com/MarceloVilela/microservices-go/platform/db"
+	"github.com/MarceloVilela/microservices-go/platform/metrics"
 	"github.com/MarceloVilela/microservices-go/platform/service"
 	"github.com/MarceloVilela/microservices-go/platform/topology"
 )
@@ -45,10 +47,12 @@ func intRange(lo, hi int) func(string) error {
 }
 
 func spec() service.Spec {
+	reg := metrics.NewRegistry()
 	return service.Spec{
+		Metrics:     reg,
 		Name:        "ms-worker",
 		DefaultAddr: ":8083",
-		Require:     amqpx.Requirement{Exchange: true, Queues: append(append([]topology.Queue{topology.PhotoProcess}, topology.RetrySteps()...), topology.PhotoDLQ)},
+		Require:     amqpx.Requirement{Exchange: true, Queues: allQueues()},
 		ExtraVars: []config.Var{
 			{Name: "DATABASE_URL", Required: true, Secret: true, Validate: db.ValidURL},
 			{Name: "WORKER_CONCURRENCY", Default: "1", Validate: intRange(1, 64)},
@@ -61,7 +65,9 @@ func spec() service.Spec {
 			{Name: "SHUTDOWN_TIMEOUT", Default: "10s", Validate: config.ValidDuration},
 			{Name: "CONSUMER_BACKOFF_MAX", Default: "30s", Validate: config.ValidDuration},
 		},
-		Setup: setup,
+		Setup: func(ctx context.Context, vals config.Values, log *slog.Logger) (*service.Runtime, error) {
+			return setup(ctx, vals, log, reg)
+		},
 	}
 }
 
@@ -77,7 +83,7 @@ func split(s string) []string {
 	return out
 }
 
-func setup(ctx context.Context, vals config.Values, log *slog.Logger) (*service.Runtime, error) {
+func setup(ctx context.Context, vals config.Values, log *slog.Logger, reg *metrics.Registry) (*service.Runtime, error) {
 	pool, err := db.Open(ctx, vals.String("DATABASE_URL"))
 	if err != nil {
 		return nil, err
@@ -107,6 +113,7 @@ func setup(ctx context.Context, vals config.Values, log *slog.Logger) (*service.
 		Router:      consumer.Router{Publisher: pub},
 		StepTTLs:    stepTTLs(),
 		Log:         log,
+		Metrics:     promrec.New(reg, vals.String("AMQP_URL"), allQueues(), 5*time.Second),
 	}
 	cons := &consumer.Consumer{
 		URL: vals.String("AMQP_URL"), Prefetch: atoi(vals, "WORKER_PREFETCH"), Concurrency: atoi(vals, "WORKER_CONCURRENCY"),
@@ -143,6 +150,11 @@ func setup(ctx context.Context, vals config.Values, log *slog.Logger) (*service.
 		}},
 		Close: func() { pub.Close(); pool.Close() },
 	}, nil
+}
+
+// allQueues são as filas cuja profundidade vira métrica: a principal, os degraus e a DLQ.
+func allQueues() []topology.Queue {
+	return append(append([]topology.Queue{topology.PhotoProcess}, topology.RetrySteps()...), topology.PhotoDLQ)
 }
 
 // stepTTLs lê os TTLs da escada na própria topologia (fonte única dos degraus).

@@ -49,7 +49,25 @@ type Photos interface {
 	// Finish grava, numa só transação: estado da foto, contador do lote, fim do lote
 	// (outbox, uma vez) e eventos.
 	Finish(ctx context.Context, f Finish) (Outcome, error)
+	// MarkStalled registra a causa numa foto que foi à DLQ por infraestrutura esgotada e segue
+	// pending (F7-5), para o ms-api listá-la em GET /dlq. Condicional a status = pending; não conta o lote.
+	MarkStalled(ctx context.Context, photoID string, class domain.Class, reason string) error
 }
+
+// Recorder recebe o desfecho de cada mensagem (métricas). Opcional.
+type Recorder interface {
+	// Processed registra o desfecho e a duração do tratamento de uma mensagem.
+	Processed(outcome string, d time.Duration)
+}
+
+// Desfechos reportados ao Recorder.
+const (
+	OutcomeDone    = "done"    // foto concluída
+	OutcomeSkipped = "skipped" // já estava terminada
+	OutcomeRetry   = "retry"   // foi para um degrau da escada
+	OutcomeDLQ     = "dlq"     // foi para a DLQ
+	OutcomeRequeue = "requeue" // devolvida à fila (desligamento ou broker/banco indisponível)
+)
 
 // Fetcher baixa a imagem. Erros vêm como *domain.Failure.
 type Fetcher interface {
@@ -101,11 +119,22 @@ type Processor struct {
 	// StepTTLs são os TTLs dos degraus de retry, crescentes (um por fila da escada). Vazio = sem retry.
 	StepTTLs []time.Duration
 	Log      *slog.Logger
+	// Metrics é opcional.
+	Metrics Recorder
 }
 
 // Handle executa a ordem de operações: (1) estado no banco, (2) baixar e gerar a miniatura,
 // (3) gravar o arquivo, (4) transação no banco. O ack é do chamador, depois do retorno Ack.
 func (p *Processor) Handle(ctx context.Context, d Delivery) Action {
+	start := time.Now()
+	act, outcome := p.handle(ctx, d)
+	if p.Metrics != nil {
+		p.Metrics.Processed(outcome, time.Since(start))
+	}
+	return act
+}
+
+func (p *Processor) handle(ctx context.Context, d Delivery) (Action, string) {
 	msg, err := parse(d.Body)
 	log := p.Log.With("message_id", d.MessageID, "attempt", d.Attempt)
 	if err != nil {
@@ -124,13 +153,13 @@ func (p *Processor) Handle(ctx context.Context, d Delivery) Action {
 		return p.failed(ctx, log, d, msg, domain.NewInfrastructure("banco indisponível", err))
 	case status != StatusPending:
 		log.Info("foto já terminada; só ack", "status", status)
-		return Ack
+		return Ack, OutcomeSkipped
 	}
 
 	// 2 e 3. baixar, gerar e gravar a miniatura
 	if err := p.render(ctx, msg); err != nil {
 		if ctx.Err() != nil {
-			return Requeue // desligando: não gasta degrau
+			return Requeue, OutcomeRequeue // desligando: não gasta degrau
 		}
 		var f *domain.Failure
 		if !errors.As(err, &f) {
@@ -146,7 +175,7 @@ func (p *Processor) Handle(ctx context.Context, d Delivery) Action {
 	}
 	fault.At(fault.AfterCommit)
 	log.Info("foto concluída", "duplicada", out.Duplicate, "lote_completo", out.BatchCompleted)
-	return Ack
+	return Ack, OutcomeDone
 }
 
 func (p *Processor) render(ctx context.Context, msg messages.PhotoProcess) error {
@@ -176,20 +205,20 @@ func classified(err error) error {
 // failed decide o destino de uma falha. Transitória e de infraestrutura consomem degrau (com
 // Retry-After pulando degraus); esgotadas, vão à DLQ. Só a transitória esgotada e a definitiva
 // fecham a foto como failed: com a infraestrutura fora, a foto fica pending para reprocessar.
-func (p *Processor) failed(ctx context.Context, log *slog.Logger, d Delivery, msg messages.PhotoProcess, f *domain.Failure) Action {
+func (p *Processor) failed(ctx context.Context, log *slog.Logger, d Delivery, msg messages.PhotoProcess, f *domain.Failure) (Action, string) {
 	class, reason := f.Class, f.Reason
 	if class == domain.Transient || class == domain.Infrastructure {
 		if ctx.Err() != nil {
-			return Requeue // desligando: não gasta degrau
+			return Requeue, OutcomeRequeue // desligando: não gasta degrau
 		}
 		if d.Attempt < len(p.StepTTLs) {
 			step := StepFor(d.Attempt, f.RetryAfter, p.StepTTLs)
 			if err := p.Router.Retry(ctx, step, d); err != nil {
 				log.Warn("republicar no degrau de retry", "erro", err)
-				return Requeue
+				return Requeue, OutcomeRequeue
 			}
 			log.Info("falha; indo para o degrau", "classe", class, "degrau", step, "retry_after", f.RetryAfter, "motivo", reason, "erro", f.Err)
-			return Ack
+			return Ack, OutcomeRetry
 		}
 		if class == domain.Transient {
 			class, reason = domain.Exhausted, "tentativas esgotadas: "+reason
@@ -204,32 +233,38 @@ func (p *Processor) failed(ctx context.Context, log *slog.Logger, d Delivery, ms
 		// concorrente já concluiu. A janela que sobra é só entre esta leitura e o Finish.
 		if st, err := p.Photos.Status(ctx, msg.PhotoID); err == nil && st != StatusPending {
 			log.Info("foto já terminada por outra entrega; só ack", "status", st)
-			return Ack
+			return Ack, OutcomeSkipped
 		}
 	}
 	// DLQ antes da transação e do ack: se morrer no meio, a reentrega repete e a DLQ pode ter duplicata
 	if err := p.Router.DeadLetter(ctx, d, class, reason); err != nil {
 		log.Warn("publicar na DLQ", "erro", err)
-		return Requeue
+		return Requeue, OutcomeRequeue
 	}
 	if !closes {
-		return Ack
+		// F7-5: a foto segue pending; a causa fica gravada para o ms-api listá-la na DLQ. Best effort:
+		// com o banco fora (a causa mais provável) devolver Requeue faria laço quente e uma
+		// duplicata na DLQ a cada volta; sem a marca a foto só continua invisível, como antes.
+		if err := p.Photos.MarkStalled(ctx, msg.PhotoID, class, reason); err != nil {
+			log.Error("marcar a foto parada na DLQ (ela segue invisível em GET /dlq)", "erro", err)
+		}
+		return Ack, OutcomeDLQ
 	}
 	if _, err := p.Photos.Finish(ctx, Finish{PhotoID: msg.PhotoID, Status: StatusFailed, FailClass: string(class), FailReason: reason}); err != nil {
 		log.Warn("gravar falha da foto", "erro", err)
-		return Requeue
+		return Requeue, OutcomeRequeue
 	}
 	fault.At(fault.AfterCommit)
-	return Ack
+	return Ack, OutcomeDLQ
 }
 
 // deadLetterOnly trata a mensagem que não dá para ligar a uma foto: DLQ e ack.
-func (p *Processor) deadLetterOnly(ctx context.Context, d Delivery, class domain.Class, reason string) Action {
+func (p *Processor) deadLetterOnly(ctx context.Context, d Delivery, class domain.Class, reason string) (Action, string) {
 	if err := p.Router.DeadLetter(ctx, d, class, reason); err != nil {
 		p.Log.Warn("publicar na DLQ", "erro", err)
-		return Requeue
+		return Requeue, OutcomeRequeue
 	}
-	return Ack
+	return Ack, OutcomeDLQ
 }
 
 var uuidRE = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)

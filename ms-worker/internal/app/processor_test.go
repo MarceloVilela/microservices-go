@@ -28,10 +28,20 @@ type rig struct {
 	retryErr, deadLetterErr error
 	outcome                 app.Outcome
 	cancelOnFetch           context.CancelFunc
+	stallErr                error
 
 	finished []app.Finish
 	retried  []int
 	dlq      []string // "classe:motivo"
+	stalled  []string // "classe:motivo" das fotos marcadas pending na DLQ
+}
+
+func (r *rig) MarkStalled(_ context.Context, _ string, c domain.Class, reason string) error {
+	r.calls = append(r.calls, "stalled")
+	if r.stallErr == nil {
+		r.stalled = append(r.stalled, string(c)+":"+reason)
+	}
+	return r.stallErr
 }
 
 func (r *rig) Status(context.Context, string) (string, error) {
@@ -132,10 +142,34 @@ func TestInfraEsgotadaVaiParaADLQSemFecharAFoto(t *testing.T) {
 	if got := handle(r, 4); got != app.Ack {
 		t.Fatalf("ação = %v", got)
 	}
-	// sem Finish (o banco está fora) e sem reler o estado: a foto segue pending
-	wantCalls(t, r, "status", "dlq")
+	// sem Finish (o banco está fora) e sem reler o estado: a foto segue pending, mas marcada (F7-5)
+	wantCalls(t, r, "status", "dlq", "stalled")
 	if r.dlq[0] != "infrastructure:tentativas esgotadas: banco indisponível" {
 		t.Errorf("dlq = %v", r.dlq)
+	}
+	if !reflect.DeepEqual(r.stalled, []string{"infrastructure:tentativas esgotadas: banco indisponível"}) {
+		t.Errorf("marcação = %v", r.stalled)
+	}
+}
+
+// Com o banco fora a marcação também falha. Devolver Requeue faria laço quente com duplicata na
+// DLQ a cada volta (o que a Fase 4 evitou): é best effort, a mensagem recebe ack.
+func TestFalhaAoMarcarNaoTravaNemRepeteADLQ(t *testing.T) {
+	r := &rig{statusErr: errors.New("conexão caiu"), stallErr: errors.New("banco fora")}
+	if got := handle(r, 4); got != app.Ack {
+		t.Fatalf("ação = %v, quer Ack", got)
+	}
+	wantCalls(t, r, "status", "dlq", "stalled")
+}
+
+// Falha definitiva fecha a foto como failed: não há o que marcar.
+func TestDefinitivaNaoMarcaComoParada(t *testing.T) {
+	r := &rig{fetchErr: domain.NewPermanent("HTTP 404", nil)}
+	handle(r, 0)
+	for _, c := range r.calls {
+		if c == "stalled" {
+			t.Fatalf("falha definitiva não deve marcar a foto: %v", r.calls)
+		}
 	}
 }
 

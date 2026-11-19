@@ -143,3 +143,29 @@ func passive(conn *amqp.Connection, fn func(*amqp.Channel) error) error {
 	defer func() { _ = ch.Close() }()
 	return fn(ch)
 }
+
+// Depths devolve o número de mensagens prontas em cada fila (declaração passiva, que nunca cria
+// nada). Usa uma conexão própria e curta; quem chama deve cachear (métricas, F7-2).
+func Depths(ctx context.Context, url string, queues []topology.Queue) (map[string]float64, error) {
+	conn, err := Dial(ctx, url)
+	if err != nil {
+		return nil, fmt.Errorf("conectar ao broker: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+	defer abortOnDone(ctx, conn)()
+
+	out := make(map[string]float64, len(queues))
+	for _, q := range queues {
+		if err := passive(conn, func(ch *amqp.Channel) error {
+			info, err := ch.QueueDeclarePassive(q.Name, true, false, false, false, nil)
+			if err != nil {
+				return err
+			}
+			out[q.Name] = float64(info.Messages)
+			return nil
+		}); err != nil {
+			return nil, fmt.Errorf("fila %s: %w", q.Name, err)
+		}
+	}
+	return out, nil
+}

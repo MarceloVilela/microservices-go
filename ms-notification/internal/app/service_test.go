@@ -147,3 +147,52 @@ func TestContextoCanceladoDevolveAFilaSemNotificar(t *testing.T) {
 		t.Error("notificou com o serviço desligando")
 	}
 }
+
+type counter struct{ got map[string]int }
+
+func (c *counter) Inc(outcome string) { c.got[outcome]++ }
+
+func TestDesfechosViramMetrica(t *testing.T) {
+	ctx := context.Background()
+	cases := []struct {
+		name string
+		run  func(c *counter)
+		want string
+	}{
+		{"notificada", func(c *counter) {
+			s := svc(newStore(), &notifier{name: "a"})
+			s.Metrics = c
+			s.Handle(ctx, []byte(okBody))
+		}, "notified"},
+		{"repetida", func(c *counter) {
+			s := svc(newStore(), &notifier{name: "a"})
+			s.Metrics = c
+			s.Handle(ctx, []byte(okBody))
+			s.Handle(ctx, []byte(okBody))
+		}, "duplicate"},
+		{"destino falhou", func(c *counter) {
+			s := svc(newStore(), &notifier{name: "a", err: errors.New("smtp fora")})
+			s.Metrics = c
+			s.Handle(ctx, []byte(okBody))
+		}, "destination_failed"},
+		{"inválida", func(c *counter) {
+			s := svc(newStore())
+			s.Metrics = c
+			s.Handle(ctx, []byte(`{`))
+		}, "invalid"},
+		{"banco fora", func(c *counter) {
+			st := newStore()
+			st.seenErr = errors.New("db")
+			s := svc(st)
+			s.Metrics = c
+			s.Handle(ctx, []byte(okBody))
+		}, "requeue"},
+	}
+	for _, tc := range cases {
+		c := &counter{got: map[string]int{}}
+		tc.run(c)
+		if c.got[tc.want] != 1 {
+			t.Errorf("%s: desfechos = %v, quer 1 de %q", tc.name, c.got, tc.want)
+		}
+	}
+}

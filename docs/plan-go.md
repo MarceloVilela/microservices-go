@@ -27,8 +27,8 @@
 | 3 | `ms-worker`: consumo, download, miniatura, ack manual, idempotência e fim de lote | L | **mergeada** (PR #4); `specs/fase-3-worker.md` |
 | 4 | Resiliência: retry com backoff, DLQ, reconexão e shutdown gracioso | L | **mergeada** (PR #5); `specs/fase-4-resiliencia.md` |
 | 5 | `ms-notification`: evento de fim de lote e abstração `Notifier` (log; e-mail opcional) | S | **mergeada** (PR #6); `specs/fase-5-notification.md` |
-| 6 | `ms-api`: leitura, stream de eventos (SSE) e reprocessamento da DLQ | M | **implementada em 2026-11-18, aceite verde**; PR pendente (a pedido); `specs/fase-6-api.md` |
-| 7 | Observabilidade, segurança e verificação de carga | M | pendente |
+| 6 | `ms-api`: leitura, stream de eventos (SSE) e reprocessamento da DLQ | M | **mergeada** (PR #7); `specs/fase-6-api.md` |
+| 7 | Observabilidade, segurança e verificação de carga | M | **implementada em 2026-11-18, aceite verde**; PR pendente (a pedido); `specs/fase-7-observabilidade.md` |
 | 8 | Painel Angular (**opcional**) | L | pendente |
 | 9 | Fechamento (long tail, README honesto, comparação com o v1) | S | pendente |
 
@@ -298,6 +298,8 @@ Entregáveis em `specs/`:
 - Carga: centenas de jobs; registrar throughput, memória e tamanho da imagem (**G2**, só números reais).
 
 **Aceite**: nenhum job malicioso derruba o worker, e cada um cai na classificação esperada; números registrados no README.
+
+**Executada em 2026-11-18** (`specs/fase-7-observabilidade.md`, evidência em `specs/execucao-fase-7.log` e `specs/execucao-fase-7-carga.log`). Decididos pelo usuário: Prometheus; carga em servidor local; só a foto `pending` na DLQ entre as pendências herdadas. **Ficam abertos (rastreados)**: poda do outbox publicado; reprocessar linha em quarentena do outbox e e-mail com `last_error`; otimização do `resize` (a carga não o apontou como gargalo: 8,6 fotos/s com 4 workers e 67 MB de pico, mas não foi perfilado); rajada de 200 req/s da escada **não testada no Picsum real** (ADR 0005); alertas e dashboards; foto parada na DLQ (marca best effort, estado implícito, sem evento SSE, índice do predicado, código 409, marca não limpa): reunidos na **ADR 0022** (`proposta`, decidir antes da Fase 8); no code-review `high` da Fase 7, 5 correções pequenas entraram e o resto está em `specs/fase-7-observabilidade.md`.
 
 ### Fase 8: Painel Angular (opcional)
 
