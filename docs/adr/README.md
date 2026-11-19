@@ -14,7 +14,7 @@ Decisões de arquitetura do projeto. Formato: Status, Contexto, Decisão, Altern
 | 0016 SSE sobre log de eventos | Fase 6 | reconexão com `Last-Event-ID` e `LISTEN/NOTIFY`; **evidência registrada (teste e aceite 6), aguardando aprovação** |
 | 0018 CORS, autenticação do SSE e DLQ | **antes** da Fase 6 | escolhas D1 a D3 implementadas e testadas; **evidência registrada, aguardando aprovação** |
 | 0009 Logging e observabilidade | Fases 5 e 7 | `slog` com correlação; métricas Prometheus (Fase 7 verde); **aguardando aprovação** |
-| 0019 Painel Angular | Fase 8 (opcional) | contrato publicado e consumido entre repositórios |
+| 0019 Painel Angular | Fase 8 (opcional) | implementado e verificado localmente (Fase 8); **aguardando aprovação**; falta publicar a tag `contract-v1` e rodar o CI do painel |
 
 | ADR | Tema | Status | Evidência |
 |---|---|---|---|

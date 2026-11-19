@@ -56,3 +56,4 @@ accept:
 	@scripts/aceite-fase-5.sh
 	@scripts/aceite-fase-6.sh
 	@scripts/aceite-fase-7.sh
+	@scripts/aceite-fase-8.sh

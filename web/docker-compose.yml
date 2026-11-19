@@ -1,0 +1,26 @@
+name: web
+
+# Painel Angular (Fase 8): build do repositório irmão, servido por nginx (estático). Opcional: ./run.sh com WITH_WEB=1.
+services:
+  app:
+    container_name: web
+    build:
+      context: ${WEB_CONTEXT:-../../microservices-frontend-angular}
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    networks: [ms-go-network]
+
+networks:
+  ms-go-network:
+    external: true
