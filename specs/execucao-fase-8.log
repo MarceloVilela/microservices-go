@@ -1,0 +1,70 @@
+# Execução da Fase 8 (2026-11-19), após o code-review high
+
+WITH_WEB=1 ./run.sh: exit 0
+make check: exit 0
+make integration: exit 0
+WITH_WEB=1 WITH_E2E=1 make accept (aceites 1 a 8 + Playwright 4/4): exit 0
+scripts/aceite-fase-8.sh sem WITH_WEB: exit 0
+Negativo: com o container web parado, o aceite 8 dá 7 FALHA e exit 1 (antes ficava verde ou abortava mudo)
+
+== 1. serviços saudáveis e prontos
+== 2. topologia vista pelo broker (criada só pelo topology-init)
+== 3. topologia divergente: /readyz falha e NADA é recriado
+== 4. config check e healthcheck dentro da imagem final
+== 5. download HTTPS na base da imagem final (distroless/static:nonroot)
+ACEITE DA FASE 1: OK
+== 1. lote válido: 202, fotos e outbox na mesma transação, fila com N mensagens
+== 2. Idempotency-Key repetida devolve o mesmo lote
+== 3. corpo inválido dá 400 e não grava nada
+== 4. broker parado: POST ainda dá 202, outbox acumula, /readyz falha; ao voltar, publica tudo
+== 5. config check do ms-ingest (DATABASE_URL obrigatória; nenhum valor é impresso)
+ACEITE DA FASE 2: OK
+== 1. worker pronto (broker, Postgres, esquema e diretório de miniaturas)
+== 2. lote do dataset: 3 fotos válidas + 1 inexistente (404) termina e emite batch.completed uma vez
+== 3. O3 (consumidor parado): mensagens ficam Ready; ao voltar o worker, o lote termina
+== 4. config check do ms-worker (DATABASE_URL obrigatória; nenhum valor é impresso)
+ACEITE DA FASE 3: OK
+== 1. pilha pronta
+== 2. O4 (R5b): mensagens enfileiradas com o worker parado sobrevivem ao reinício do broker
+== 3. broker reiniciado com o worker no ar: o MESMO processo volta a consumir
+== 4. id inválido do dataset termina na DLQ com a causa, e a DLQ é inspecionável sem consumir
+== 5. SIGTERM: o worker encerra com saída 0
+ACEITE DA FASE 4: OK
+== 1. pilha pronta
+== 2. um lote termina e o e-mail chega UMA vez (uma foto válida, uma inválida)
+== 3. o MESMO batch.completed reentregue não gera segundo e-mail nem segundo log
+== 4. SIGTERM: o ms-notification encerra com saída 0
+ACEITE DA FASE 5: OK
+== 1. pilha pronta
+== 2. sem token ou de origem estranha: recusado (SSE e miniatura incluídos)
+== 3. SSE: pending → done|failed ao vivo, e heartbeat em silêncio
+== 4. Last-Event-ID depois de reiniciar o ms-api: sem perda e sem repetição
+== 5. leitura, miniatura com ETag e paginação
+== 6. DLQ com a causa e retry sem duplicar resultado
+== 7. SIGTERM com stream aberto: saída 0
+ACEITE DA FASE 6: OK
+== 1. pilha pronta
+== 2. /metrics responde nos 4 serviços, sem token
+== 3. entrada hostil recusada no ingest (400, nada gravado)
+== 4. métricas acompanham um lote real (1 done + 1 failed)
+== 5. cardinalidade: nenhum id vira rótulo
+== 6. a causa da falha definitiva aparece na DLQ da API
+ACEITE DA FASE 7: OK
+== 1. origem estranha recusada pelo ms-api
+== 2. contrato do painel = contrato deste repositório
+== 3. painel servido pelo nginx
+== 4. CORS: a origem do painel passa
+== 5. nenhum token na imagem do painel
+== 6. ponta a ponta (Playwright, repositório do painel)
+ACEITE DA FASE 8: OK
+
+## aceite 8 sem WITH_WEB
+== 1. origem estranha recusada pelo ms-api
+ok    ms-api recusa origem estranha (403)
+== 2. contrato do painel = contrato deste repositório
+ok    contract/openapi-api.yaml igual a specs/openapi-api.yaml
+ok    contract/openapi-ingest.yaml igual a specs/openapi-ingest.yaml
+ok    contract/events.schema.json igual a specs/events.schema.json
+(seções 3 a 6, do painel em nginx, puladas: rode com WITH_WEB=1 depois de WITH_WEB=1 ./run.sh)
+
+ACEITE DA FASE 8: OK

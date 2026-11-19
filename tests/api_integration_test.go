@@ -17,7 +17,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,6 +26,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/MarceloVilela/microservices-go/platform/messages"
 )
@@ -279,66 +279,62 @@ func (c *sseConn) idsUntil(t *testing.T, last int) []int {
 	return ids
 }
 
-// checkEventSchema confere um frame contra specs/events.schema.json: campos obrigatórios do envelope,
-// `type` no enum e os campos obrigatórios do payload do ramo (oneOf) daquele tipo. É uma checagem
-// estrutural mínima, sem biblioteca de JSON Schema.
-func checkEventSchema(t *testing.T, f frame) {
+// eventSchema compila specs/events.schema.json (JSON Schema 2020-12 completo: tipos, formatos, oneOf e payload por tipo).
+func eventSchema(t *testing.T) *jsonschema.Schema {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "specs", "events.schema.json"))
+	c := jsonschema.NewCompiler()
+	c.AssertFormat()
+	sch, err := c.Compile(filepath.Join("..", "specs", "events.schema.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var schema struct {
-		Required   []string `json:"required"`
-		Properties struct {
-			Type struct {
-				Enum []string `json:"enum"`
-			} `json:"type"`
-		} `json:"properties"`
-		OneOf []struct {
-			Properties struct {
-				Type struct {
-					Const string   `json:"const"`
-					Enum  []string `json:"enum"`
-				} `json:"type"`
-				Payload struct {
-					Required []string `json:"required"`
-				} `json:"payload"`
-			} `json:"properties"`
-		} `json:"oneOf"`
+	return sch
+}
+
+// validateEvent devolve o erro de validação do `data` de um evento contra o esquema (nil se válido).
+func validateEvent(sch *jsonschema.Schema, data string) error {
+	inst, err := jsonschema.UnmarshalJSON(strings.NewReader(data))
+	if err != nil {
+		return err
 	}
-	if err := json.Unmarshal(raw, &schema); err != nil {
-		t.Fatal(err)
+	return sch.Validate(inst)
+}
+
+// checkEventSchema confere um frame contra specs/events.schema.json (G5) com validação completa, e que o
+// `event:` do frame é o `type` do dado.
+func checkEventSchema(t *testing.T, sch *jsonschema.Schema, f frame) {
+	t.Helper()
+	if err := validateEvent(sch, f.data); err != nil {
+		t.Errorf("evento %s fora do esquema: %v\n%s", f.event, err, f.data)
 	}
-	var env map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(f.data), &env); err != nil {
-		t.Errorf("data não é JSON: %q", f.data)
-		return
+	var env struct {
+		Type string `json:"type"`
 	}
-	for _, k := range schema.Required {
-		if _, ok := env[k]; !ok {
-			t.Errorf("evento %s sem o campo %q: %s", f.event, k, f.data)
+	_ = json.Unmarshal([]byte(f.data), &env)
+	if env.Type != f.event {
+		t.Errorf("type %q difere do event: %q", env.Type, f.event)
+	}
+}
+
+// O validador precisa recusar: sem isso a checagem acima passaria sempre (prova por mutação do dado).
+func TestEsquemaDeEventosRecusaDadoInvalido(t *testing.T) {
+	sch := eventSchema(t)
+	const ok = `{"seq":1,"type":"photo.done","batch_id":"4f0c2a52-6d57-4a53-9a0e-8f6f6a1b2c3d","photo_id":"4f0c2a52-6d57-4a53-9a0e-8f6f6a1b2c3e","payload":{"status":"done","failure_class":"","failure_reason":""},"created_at":"2026-11-19T12:00:00Z"}`
+	if err := validateEvent(sch, ok); err != nil {
+		t.Fatalf("evento válido recusado: %v", err)
+	}
+	for name, bad := range map[string]string{
+		"seq zero":              strings.Replace(ok, `"seq":1`, `"seq":0`, 1),
+		"tipo desconhecido":     strings.Replace(ok, `"photo.done"`, `"photo.exploded"`, 1),
+		"payload sem status":    strings.Replace(ok, `"status":"done",`, ``, 1),
+		"batch_id não é uuid":   strings.Replace(ok, `4f0c2a52-6d57-4a53-9a0e-8f6f6a1b2c3d`, `nao-e-uuid`, 1),
+		"data inválida":         strings.Replace(ok, `2026-11-19T12:00:00Z`, `ontem`, 1),
+		"payload de outro tipo": strings.Replace(ok, `"photo.done"`, `"batch.completed"`, 1),
+	} {
+		if err := validateEvent(sch, bad); err == nil {
+			t.Errorf("%s: o esquema aceitou %s", name, bad)
 		}
 	}
-	var typ string
-	_ = json.Unmarshal(env["type"], &typ)
-	if typ != f.event || !slices.Contains(schema.Properties.Type.Enum, typ) {
-		t.Errorf("type %q (event: %q) fora do esquema %v", typ, f.event, schema.Properties.Type.Enum)
-	}
-	var payload map[string]json.RawMessage
-	_ = json.Unmarshal(env["payload"], &payload)
-	for _, branch := range schema.OneOf {
-		bt := branch.Properties.Type
-		if bt.Const == typ || slices.Contains(bt.Enum, typ) {
-			for _, k := range branch.Properties.Payload.Required {
-				if _, ok := payload[k]; !ok {
-					t.Errorf("payload de %s sem %q: %s", typ, k, f.data)
-				}
-			}
-			return
-		}
-	}
-	t.Errorf("nenhum ramo do esquema cobre o tipo %q", typ)
 }
 
 func insertEvents(t *testing.T, p *pgxpool.Pool, n int) {
@@ -627,9 +623,10 @@ func TestAPIPipelineSSEMiniaturaERetryDaDLQ(t *testing.T) {
 
 	// todo evento visto no stream respeita specs/events.schema.json (G5)
 	checked := 0
+	sch := eventSchema(t) // compilado uma vez
 	for _, f := range stream.seen {
 		if f.id != "" {
-			checkEventSchema(t, f)
+			checkEventSchema(t, sch, f)
 			checked++
 		}
 	}

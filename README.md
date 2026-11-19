@@ -3,10 +3,10 @@
 Pipeline de processamento de fotos em microsserviços **Go**, sobre **RabbitMQ 4** e **PostgreSQL**, com painel
 **Angular** opcional que mostra a fila ao vivo.
 
-> **Status: Fases 0 a 6 mergeadas; Fase 7 (observabilidade, segurança e carga) implementada, sem PR.** `/metrics` (Prometheus) nos quatro serviços; a foto parada na DLQ por infraestrutura aparece em `GET /dlq`; entrada hostil provada ponta a ponta; carga medida (abaixo). Há monorepo Go, Docker, CI, topologia do broker, `ms-ingest` e `ms-worker`
+> **Status: Fases 0 a 7 mergeadas; Fase 8 (painel Angular, opcional) implementada, sem PR.** O painel mora no repositório irmão `microservices-frontend-angular`; aqui entram o serviço `web` (nginx, `WITH_WEB=1 ./run.sh`, porta 8080), o CORS e o contrato publicado (`specs/openapi-*.yaml`, `specs/events.schema.json`). `/metrics` (Prometheus) nos quatro serviços; a foto parada na DLQ por infraestrutura aparece em `GET /dlq`; entrada hostil provada ponta a ponta; carga medida (abaixo). Há monorepo Go, Docker, CI, topologia do broker, `ms-ingest` e `ms-worker`
 > (reconexão do consumidor, escada de retry e DLQ inspecionável: `docs/dlq.md`); o `ms-notification` consome `batch.completed` e notifica uma vez por lote (log e e-mail no Mailpit); o `ms-api` lê lotes, fotos e DLQ, serve miniaturas com `ETag`, reprocessa foto da DLQ e transmite eventos por SSE (`Last-Event-ID`); tudo exige `Authorization: Bearer` (token de demonstração, **não é segurança real**). O plano continua sendo um rascunho para aprovação.
 >
-> Subir: `./run.sh` (RabbitMQ, `topology-init` e os 4 serviços); verificar: `make check`, `make integration`, `make accept`.
+> Subir: `./run.sh` (RabbitMQ, `topology-init` e os 4 serviços; `WITH_WEB=1 ./run.sh` inclui o painel em http://localhost:8080); verificar: `make check`, `make integration`, `make accept` (`WITH_WEB=1 make accept` inclui o aceite 8).
 
 ## O que é
 

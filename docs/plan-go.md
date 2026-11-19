@@ -28,12 +28,12 @@
 | 4 | Resiliência: retry com backoff, DLQ, reconexão e shutdown gracioso | L | **mergeada** (PR #5); `specs/fase-4-resiliencia.md` |
 | 5 | `ms-notification`: evento de fim de lote e abstração `Notifier` (log; e-mail opcional) | S | **mergeada** (PR #6); `specs/fase-5-notification.md` |
 | 6 | `ms-api`: leitura, stream de eventos (SSE) e reprocessamento da DLQ | M | **mergeada** (PR #7); `specs/fase-6-api.md` |
-| 7 | Observabilidade, segurança e verificação de carga | M | **implementada em 2026-11-18, aceite verde**; PR pendente (a pedido); `specs/fase-7-observabilidade.md` |
-| 8 | Painel Angular (**opcional**) | L | pendente |
+| 7 | Observabilidade, segurança e verificação de carga | M | **mergeada** (PR #8); `specs/fase-7-observabilidade.md` |
+| 8 | Painel Angular (**opcional**) | L | **implementada em 2026-11-19, aceite verde**; sem commit nem PR (a pedido); `specs/fase-8-painel.md`; painel no repositório irmão |
 | 9 | Fechamento (long tail, README honesto, comparação com o v1) | S | pendente |
 
 Os tamanhos são estimativas relativas, não prazos. O backend Go (fases 0 a 7) é o centro do projeto e fecha
-sem o painel; a Fase 8 só começa com o PR da Fase 7 mergeado.
+sem o painel; a Fase 8 só começou com o PR da Fase 7 mergeado (PR #8).
 
 ## 1. Ponto de partida: o que o v1 realmente é
 
@@ -310,6 +310,8 @@ Só começa com a Fase 7 mergeada. Fica em **repositório separado** (`projects-
 - Telas: **criar lote** (dataset normal e "com falhas"), **lote em andamento** (progresso ao vivo), **galeria de miniaturas** (paginação por cursor, `loading="lazy"`), **fila de falhas (DLQ)** com a causa e botão de reprocessar; estados de carregamento, vazio e erro em todas.
 - **Execução**: serviço `web` no compose deste repositório, apontando para a imagem ou o build do repositório do painel (nginx servindo o build estático; `ng serve` só em desenvolvimento), origem registrada na allowlist de CORS; **job de CI no repositório do painel** (`npm ci`, lint, testes, build de produção, geração do cliente a partir do contrato publicado, sem diff).
 - Testes: unidade dos serviços (RxJS com *marble tests*), componente, e um teste ponta a ponta (Playwright contra o compose) do fluxo "criar lote com falhas → ver na DLQ → reprocessar".
+
+> **Executada em 2026-11-19** (`specs/fase-8-painel.md`, evidência em `specs/execucao-fase-8.log`). Decididos pelo usuário: D1 tag git `contract-v1`, D2 signals + serviços, D3 `openapi-typescript`, D4 nginx na porta 8080; **ADR 0022 adiada para depois do painel**. Entrou também o conserto do aceite 7 (SIGPIPE do `curl | grep -q`, que deixou o `images` do PR #8 vermelho) e a validação completa dos eventos contra o `events.schema.json`. **Ficam abertos (rastreados)**: CI do painel não executado (repositório sem git, segredo `BACKEND_READ_TOKEN` e tag `contract-v1` ainda inexistentes); o E2E da queda não distingue `Last-Event-ID` de `reset`+REST; ADR 0022; sem modo demo offline; sem auditoria de acessibilidade com leitor de tela.
 
 **Aceite**: com o backend no ar, um lote criado **pelo painel** aparece progredindo na tela; a foto inválida surge na DLQ com a causa; o reprocessamento atualiza a tela sem recarregar; derrubar o `ms-api` mostra "desconectado" e, ao voltar, reconecta e **recupera os eventos perdidos** pelo `Last-Event-ID`; sem vazamento de conexões SSE ao navegar entre telas; build de produção sem warning (`echo $?` = `0`); teste ponta a ponta verde no CI.
 

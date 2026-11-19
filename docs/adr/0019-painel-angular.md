@@ -28,4 +28,4 @@ Cortar a Fase 8 se o backend consumir o orçamento previsto.
 
 ## Evidência
 
-Pendente. Só na Fase 8; depende das ADRs 0016 e 0018.
+Fase 8 (2026-11-19), `specs/fase-8-painel.md` e `specs/execucao-fase-8.log`: Angular 22 zoneless com signals; contrato por tag git (`contract-v1`) com tipos gerados (`openapi-typescript` fixado por `npx`, por causa do peer `typescript ^5`; `json-schema-to-typescript` para os eventos); SSE por `fetch` com `Authorization` embrulhado em `Observable` (teardown, backoff, `Last-Event-ID`); nginx sem root servindo o build estático. 37 testes de unidade e componente, lint, build sem warning e 4 testes ponta a ponta contra o compose. **Aguardando aprovação** (a tag ainda não foi publicada e o CI do painel não rodou).

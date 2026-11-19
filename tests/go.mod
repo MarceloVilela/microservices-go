@@ -6,6 +6,7 @@ require (
 	github.com/MarceloVilela/microservices-go/platform v0.0.0
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/rabbitmq/amqp091-go v1.17.0
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/testcontainers/testcontainers-go v0.45.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.45.0
 	github.com/testcontainers/testcontainers-go/modules/rabbitmq v0.45.0

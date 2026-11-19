@@ -1,6 +1,7 @@
 #!/bin/sh
 # Sobe o Postgres e o RabbitMQ, declara a topologia (topology-init) e sobe os 4 serviços.
 # Uso: ./run.sh                 sobe tudo
+#      WITH_WEB=1 ./run.sh      sobe também o painel Angular em http://localhost:8080
 #      ./run.sh <servico> ...   docker compose do serviço (ex.: ./run.sh ms-ingest logs -f)
 cd "$(dirname "$0")" || exit 1
 set -eu
@@ -17,6 +18,11 @@ grep -q '^RABBITMQ_USER=' .env || echo 'RABBITMQ_USER=app' >> .env
 grep -q '^RABBITMQ_PASS=' .env || echo "RABBITMQ_PASS=$(rand)" >> .env
 grep -q '^POSTGRES_PASS=' .env || echo "POSTGRES_PASS=$(rand)" >> .env
 grep -q '^API_DEMO_TOKEN=' .env || echo "API_DEMO_TOKEN=$(rand)" >> .env
+# o painel em nginx (http://localhost:8080) só entra na allowlist de CORS quando pedido: sem ele, a origem não é confiável
+if [ "${WITH_WEB:-0}" = 1 ]; then
+  grep -q '^CORS_ORIGINS=' .env || echo 'CORS_ORIGINS=http://localhost:4200,http://localhost:8080' >> .env
+  grep -q '^API_CORS_ORIGINS=' .env || echo 'API_CORS_ORIGINS=http://localhost:4200,http://localhost:8080' >> .env
+fi
 
 dc() { svc="$1"; shift; docker compose --env-file .env -f "$svc/docker-compose.yml" "$@"; }
 
@@ -35,3 +41,6 @@ dc ms-queues run --rm --build topology-init
 for svc in $SERVICES; do
   dc "$svc" up -d --build
 done
+
+# painel Angular (Fase 8, opcional): WITH_WEB=1 ./run.sh (exige o repositório irmão microservices-frontend-angular)
+if [ "${WITH_WEB:-0}" = 1 ]; then dc web up -d --build; fi

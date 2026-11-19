@@ -44,8 +44,9 @@ for u in "$INGEST" "$API" "$WORKER" "$NOTIF"; do wait_for 200 "$u/readyz" status
 echo "== 2. /metrics responde nos 4 serviços, sem token"
 for u in "$INGEST" "$API" "$WORKER" "$NOTIF"; do
   expect "GET $u/metrics" 200 "$(status "$u/metrics")"
-  curl -s "$u/metrics" | grep -q '^go_goroutines ' && ok "$u: métricas do runtime Go" || fail "$u: sem go_goroutines"
-  curl -s "$u/metrics" | grep -q '^http_requests_total{' && ok "$u: http_requests_total" || fail "$u: sem http_requests_total"
+  m="$(curl -s "$u/metrics" || true)" # captura inteira: `curl | grep -q` dá SIGPIPE (23) sob pipefail
+  grep -q '^go_goroutines ' <<<"$m" && ok "$u: métricas do runtime Go" || fail "$u: sem go_goroutines"
+  grep -q '^http_requests_total{' <<<"$m" && ok "$u: http_requests_total" || fail "$u: sem http_requests_total"
 done
 for s in outbox_pending outbox_quarantined outbox_oldest_pending_age_seconds; do
   [ -n "$(metric "$INGEST" "$s")" ] && ok "ingest expõe $s" || fail "ingest sem $s"
