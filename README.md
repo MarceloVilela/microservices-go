@@ -3,10 +3,9 @@
 Pipeline de processamento de fotos em microsserviços **Go**, sobre **RabbitMQ 4** e **PostgreSQL**, com painel
 **Angular** opcional que mostra a fila ao vivo.
 
-> **Status: Fases 0 a 7 mergeadas; Fase 8 (painel Angular, opcional) implementada, sem PR.** O painel mora no repositório irmão `microservices-frontend-angular`; aqui entram o serviço `web` (nginx, `WITH_WEB=1 ./run.sh`, porta 8080), o CORS e o contrato publicado (`specs/openapi-*.yaml`, `specs/events.schema.json`). `/metrics` (Prometheus) nos quatro serviços; a foto parada na DLQ por infraestrutura aparece em `GET /dlq`; entrada hostil provada ponta a ponta; carga medida (abaixo). Há monorepo Go, Docker, CI, topologia do broker, `ms-ingest` e `ms-worker`
-> (reconexão do consumidor, escada de retry e DLQ inspecionável: `docs/dlq.md`); o `ms-notification` consome `batch.completed` e notifica uma vez por lote (log e e-mail no Mailpit); o `ms-api` lê lotes, fotos e DLQ, serve miniaturas com `ETag`, reprocessa foto da DLQ e transmite eventos por SSE (`Last-Event-ID`); tudo exige `Authorization: Bearer` (token de demonstração, **não é segurança real**). O plano continua sendo um rascunho para aprovação.
+> **Status: Fases 0 a 8 mergeadas (PR #1 a #9); Fase 9 (fechamento) em andamento.** Backend completo (`ms-ingest`, `ms-worker`, `ms-notification`, `ms-api`) e painel Angular **opcional** (repositório irmão `microservices-frontend-angular`; aqui entram o serviço `web` em nginx, o CORS e o contrato publicado em `specs/openapi-*.yaml` e `specs/events.schema.json`). O backend fecha sem o painel. Tudo exige `Authorization: Bearer` com token de demonstração, que **não é segurança real**. Sem deploy: roda só local.
 >
-> Subir: `./run.sh` (RabbitMQ, `topology-init` e os 4 serviços; `WITH_WEB=1 ./run.sh` inclui o painel em http://localhost:8080); verificar: `make check`, `make integration`, `make accept` (`WITH_WEB=1 make accept` inclui o aceite 8).
+> Subir: `./run.sh` (RabbitMQ, Postgres, `topology-init` e os 4 serviços; `WITH_WEB=1 ./run.sh` inclui o painel em http://localhost:8080). Verificar: `make check`, `make integration`, `make accept` (`WITH_WEB=1 make accept` inclui o aceite 8), `make load`.
 
 ## O que é
 
@@ -48,9 +47,9 @@ Serviços não importam uns aos outros. Diagrama e detalhes na seção 6 de [`do
 | 4 | Resiliência: retry, DLQ, reconexão e shutdown | mergeada |
 | 5 | `ms-notification` | mergeada |
 | 6 | `ms-api`: leitura, SSE e DLQ | mergeada |
-| 7 | Observabilidade, segurança e carga | implementada, aceite verde; PR pendente |
-| 8 | Painel Angular (opcional) | pendente |
-| 9 | Fechamento | pendente |
+| 7 | Observabilidade, segurança e carga | mergeada |
+| 8 | Painel Angular (opcional) | mergeada |
+| 9 | Fechamento | em andamento (`specs/fase-9-fechamento.md`) |
 
 O backend (fases 0 a 7) fecha sem o painel.
 
@@ -77,7 +76,9 @@ Limites: o Picsum real não foi submetido à carga (a rajada de 200 req/s é o r
 - [`docs/plan-go-code-review.md`](docs/plan-go-code-review.md): revisão do plano e rastreio das correções.
 - [`docs/go101.md`](docs/go101.md): como o projeto foi escolhido.
 - [`docs/adr/`](docs/adr): 22 ADRs; 12 aceitas e 10 `proposta` até as fases correspondentes (nenhuma é aceita sem evidência e aprovação).
-- [`specs/`](specs): entregáveis das Fases 0 e 1 (auditoria do v1, oráculo, dataset, spikes, esqueleto).
+- [`docs/comparacao-v1-go.md`](docs/comparacao-v1-go.md): v1 (PHP) × Go em linhas, imagem, memória e subida, com o que **não** foi medido.
+- [`CHANGELOG.md`](CHANGELOG.md): uma entrada por fase.
+- [`specs/`](specs): spec por fase, evidência (`execucao-fase-N.log`), contrato, oráculo e spikes.
 
 ## Metodologia
 
@@ -90,3 +91,8 @@ versionada. Nenhuma ADR é aceita sem medição e aprovação.
 - Sem deploy real: roda só local, via Docker.
 - Retry por degraus de TTL fixo, sem jitter; o *thundering herd* foi medido no S2 e é custo assumido (ADR 0005).
 - Token estático de demonstração no painel **não é** segurança real.
+- Painel opcional: CI do painel ainda não executado (repositório sem git, tag `contract-v1` e segredo `BACKEND_READ_TOKEN` pendentes); sem modo demo offline; sem auditoria de acessibilidade com leitor de tela.
+- Carga medida em uma máquina e uma rodada; o Picsum real não foi submetido à rajada da escada de retry (ADR 0005).
+- Abertos e rastreados: poda do outbox publicado, reprocesso de linha em quarentena do outbox, foto parada na DLQ (ADR 0022; decidi-la muda o contrato consumido pelo painel, G5, então exige nova versão do contrato), `sqlc` adiado (ADR 0007).
+- 10 das 22 ADRs seguem `proposta`, aguardando aprovação.
+- Memória e subida do v1 não foram medidas (v1 é oráculo intocado); ver `docs/comparacao-v1-go.md`.

@@ -12,7 +12,7 @@
 > Metodologia: a mesma do `php-laravel/plan.md` (spec antes do código, ADR com critério de reversão,
 > um PR por fase, gates com evidência versionada).
 >
-> **Este plano é um rascunho para aprovação.** Nada foi implementado. Os itens marcados *(hipótese)*
+> **Plano original (rascunho de 2026-11-17); as Fases 0 a 8 foram executadas e mergeadas (status na tabela abaixo).** Os itens marcados *(hipótese)*
 > viram ADR na Fase 0, com evidência medida, antes de virar decisão.
 > **Revisado** em 2026-11-17 pelo code review `high` em `plan-go-code-review.md` (11 achados, todos tratados; ver
 > a tabela de rastreio no fim daquele arquivo).
@@ -29,8 +29,8 @@
 | 5 | `ms-notification`: evento de fim de lote e abstração `Notifier` (log; e-mail opcional) | S | **mergeada** (PR #6); `specs/fase-5-notification.md` |
 | 6 | `ms-api`: leitura, stream de eventos (SSE) e reprocessamento da DLQ | M | **mergeada** (PR #7); `specs/fase-6-api.md` |
 | 7 | Observabilidade, segurança e verificação de carga | M | **mergeada** (PR #8); `specs/fase-7-observabilidade.md` |
-| 8 | Painel Angular (**opcional**) | L | **implementada em 2026-11-19, aceite verde**; sem commit nem PR (a pedido); `specs/fase-8-painel.md`; painel no repositório irmão |
-| 9 | Fechamento (long tail, README honesto, comparação com o v1) | S | pendente |
+| 8 | Painel Angular (**opcional**) | L | **mergeada** (PR #9, 2026-11-19); `specs/fase-8-painel.md`; painel no repositório irmão |
+| 9 | Fechamento (long tail, README honesto, comparação com o v1) | S | **em andamento** em `fase-9-fechamento`; `specs/fase-9-fechamento.md`, `docs/comparacao-v1-go.md`, `CHANGELOG.md` |
 
 Os tamanhos são estimativas relativas, não prazos. O backend Go (fases 0 a 7) é o centro do projeto e fecha
 sem o painel; a Fase 8 só começou com o PR da Fase 7 mergeado (PR #8).
@@ -262,7 +262,7 @@ Entregáveis em `specs/`:
 
 ### Fase 4: Resiliência
 
-> **Status (2026-11-18): implementada na branch `fase-4-resiliencia`, aceite verde, sem PR.** Spec e desvios: `specs/fase-4-resiliencia.md`; evidência: `specs/execucao-fase-4.log`. D1 (infra consome degrau) e D2 (reler estado antes da DLQ) resolvidas; `Requeue` sem limite eliminado.
+> **Status: mergeada (PR #5, 2026-11-18).** Spec e desvios: `specs/fase-4-resiliencia.md`; evidência: `specs/execucao-fase-4.log`. D1 (infra consome degrau) e D2 (reler estado antes da DLQ) resolvidas; `Requeue` sem limite eliminado.
 
 - Retry por degraus, falha definitiva direto à DLQ, DLQ com inspeção documentada.
 - **Herdado da Fase 3 (code-review), resolvido:** erro de banco ou disco consome degrau (classe `infrastructure`; esgotado vai à DLQ e a foto fica `pending`); DLQ × transação: relê o estado antes da DLQ e aceita a janela residual (ver `specs/fase-4-resiliencia.md`).
@@ -273,7 +273,7 @@ Entregáveis em `specs/`:
 
 ### Fase 5: `ms-notification`
 
-> **Status (2026-11-18): implementada na branch `fase-5-notification`, aceite verde, sem PR.** Spec e decisões: `specs/fase-5-notification.md` (D1: dedup em tabela `notifications` no Postgres; D2: falha de destino é registrada e a mensagem recebe ack). Evidência: `specs/execucao-fase-5.log`. O `Supervisor` foi para `platform/amqpx`. Itens do code-review registrados (sem reprocesso de e-mail com `last_error`, consumidor duplicado com o worker, migração do notification feita pelo ingest): ver `specs/fase-5-notification.md`.
+> **Status: mergeada (PR #6, 2026-11-18).** Spec e decisões: `specs/fase-5-notification.md` (D1: dedup em tabela `notifications` no Postgres; D2: falha de destino é registrada e a mensagem recebe ack). Evidência: `specs/execucao-fase-5.log`. O `Supervisor` foi para `platform/amqpx`. Itens do code-review registrados (sem reprocesso de e-mail com `last_error`, consumidor duplicado com o worker, migração do notification feita pelo ingest): ver `specs/fase-5-notification.md`.
 
 - Consome `batch.completed` e notifica por uma interface pequena `Notifier`, **definida no consumidor** (ADR 0020), deduplicando por `batch_id`. Destino padrão: `slog` (JSON). Destino opcional: **e-mail via SMTP** (Mailpit em container no desenvolvimento, sem envio real). Nenhum destino **nunca** derruba o consumo.
 
@@ -281,7 +281,7 @@ Entregáveis em `specs/`:
 
 ### Fase 6: `ms-api`
 
-> **Status (2026-11-18): implementada na branch `fase-6-api`, aceite verde, sem PR.** Spec e decisões do usuário (D1 a D3): `specs/fase-6-api.md`; evidência: `specs/execucao-fase-6.log`; contrato: `specs/openapi-api.yaml` e `specs/events.schema.json`. Escolhas: SSE por `fetch` com Bearer (sem token na query), miniatura também com Bearer, retry só reabre foto `failed` e não toca o lote (o worker conta o lote só na 1ª finalização, `photos.attempts_closed`). Buraco de `seq` espera 2 s antes de ser aceito (F6-9). Abertos: foto `pending` por infra esgotada não aparece em `GET /dlq`; validação do esquema de eventos é estrutural (validador completo na Fase 8).
+> **Status: mergeada (PR #7, 2026-11-18).** Spec e decisões do usuário (D1 a D3): `specs/fase-6-api.md`; evidência: `specs/execucao-fase-6.log`; contrato: `specs/openapi-api.yaml` e `specs/events.schema.json`. Escolhas: SSE por `fetch` com Bearer (sem token na query), miniatura também com Bearer, retry só reabre foto `failed` e não toca o lote (o worker conta o lote só na 1ª finalização, `photos.attempts_closed`). Buraco de `seq` espera 2 s antes de ser aceito (F6-9). Abertos: foto `pending` por infra esgotada não aparece em `GET /dlq`; validação do esquema de eventos é estrutural (validador completo na Fase 8).
 
 - Leitura (N9): `GET /batches`, `GET /batches/{id}`, `GET /photos?status=&batch_id=&cursor=`, `GET /photos/{id}/thumb` (com `ETag`), `GET /dlq` (com a causa da falha). Erros em `application/problem+json`.
 - **SSE** em `GET /events` (ADR 0016) lendo o **log de eventos**: `id` = `seq`, retomada por `Last-Event-ID`, *heartbeat* (comentário a cada ~15 s, contra timeout de proxy), limite de buffer por cliente (cliente lento é desconectado e retoma pelo `seq`) e encerramento limpo no shutdown (N3).
@@ -299,7 +299,7 @@ Entregáveis em `specs/`:
 
 **Aceite**: nenhum job malicioso derruba o worker, e cada um cai na classificação esperada; números registrados no README.
 
-**Executada em 2026-11-18** (`specs/fase-7-observabilidade.md`, evidência em `specs/execucao-fase-7.log` e `specs/execucao-fase-7-carga.log`). Decididos pelo usuário: Prometheus; carga em servidor local; só a foto `pending` na DLQ entre as pendências herdadas. **Ficam abertos (rastreados)**: poda do outbox publicado; reprocessar linha em quarentena do outbox e e-mail com `last_error`; otimização do `resize` (a carga não o apontou como gargalo: 8,6 fotos/s com 4 workers e 67 MB de pico, mas não foi perfilado); rajada de 200 req/s da escada **não testada no Picsum real** (ADR 0005); alertas e dashboards; foto parada na DLQ (marca best effort, estado implícito, sem evento SSE, índice do predicado, código 409, marca não limpa): reunidos na **ADR 0022** (`proposta`, decidir antes da Fase 8); no code-review `high` da Fase 7, 5 correções pequenas entraram e o resto está em `specs/fase-7-observabilidade.md`.
+**Executada em 2026-11-18, mergeada em 2026-11-19 (PR #8)** (`specs/fase-7-observabilidade.md`, evidência em `specs/execucao-fase-7.log` e `specs/execucao-fase-7-carga.log`). Decididos pelo usuário: Prometheus; carga em servidor local; só a foto `pending` na DLQ entre as pendências herdadas. **Ficam abertos (rastreados)**: poda do outbox publicado; reprocessar linha em quarentena do outbox e e-mail com `last_error`; otimização do `resize` (a carga não o apontou como gargalo: 8,6 fotos/s com 4 workers e 67 MB de pico, mas não foi perfilado); rajada de 200 req/s da escada **não testada no Picsum real** (ADR 0005); alertas e dashboards; foto parada na DLQ (marca best effort, estado implícito, sem evento SSE, índice do predicado, código 409, marca não limpa): reunidos na **ADR 0022** (`proposta`, decidir antes da Fase 8); no code-review `high` da Fase 7, 5 correções pequenas entraram e o resto está em `specs/fase-7-observabilidade.md`.
 
 ### Fase 8: Painel Angular (opcional)
 
@@ -347,7 +347,7 @@ Só começa com a Fase 7 mergeada. Fica em **repositório separado** (`projects-
 
 ## 10. Decisões
 
-Decididas em 2026-11-17 (itens 2, 4, 5 e 6) e **pendentes** (1 e 3):
+Decididas em 2026-11-17 (itens 2, 4, 5 e 6); o 1 foi decidido de fato e o 3 virou a ADR 0007 (aceita: Postgres + `pgx`; `sqlc` adiado):
 
 1. **Onde mora o projeto e como se chama?** *Decidido de fato*: repositório privado `MarceloVilela/microservices-go` (pasta `projects-ia/microservices-go`). O v1 fica **intocado**, como oráculo.
 2. **O `ms-notification` entra?** **Sim, como serviço próprio** (Fase 5).

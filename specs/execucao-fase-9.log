@@ -1,0 +1,34 @@
+# Execução da Fase 9 (2026-11-19)
+
+## Linhas (Go: *.go sem vendor; produção = sem _test.go; v1: *.php de app/, routes/, database/ e tests/)
+ms-ingest prod=504 test=260
+ms-worker prod=1462 test=900
+ms-notification prod=574 test=445
+ms-api prod=1104 test=858
+ms-queues prod=89 test=25
+platform prod=1657 test=1081
+archtest prod=0 test=186
+tests prod=43 test=3650
+Go total: prod=5433 test=7405 (fora: ms-db, web, scripts, specs)
+v1 ms-transaction prod=754 test=41
+v1 ms-notification prod=596 test=41
+
+## Imagens (docker images)
+ms-api-app:latest 26.8MB
+ms-notification-app:latest 26.7MB
+ms-worker-app:latest 27MB
+ms-ingest-app:latest 26.8MB
+ms-queues-topology-init:latest 16.2MB
+ms-transaction-app:latest 141MB
+
+## Memória ociosa (docker stats --no-stream)
+web 7.711MiB / 19.42GiB
+ms-api 3.48MiB / 19.42GiB
+ms-notification 3.684MiB / 19.42GiB
+ms-worker 4.266MiB / 19.42GiB
+ms-ingest 4.996MiB / 19.42GiB
+ms-mailpit 17.55MiB / 19.42GiB
+ms-queues 96.55MiB / 19.42GiB
+ms-db 31.84MiB / 19.42GiB
+
+## Subida até /readyz do ms-api (stop+start, 3 rodadas, s): 0.83 0.37 0.75
